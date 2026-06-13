@@ -1,0 +1,31 @@
+set_day_kwh:
+  name: Установить дневные показания
+  description: Установить значение дневного счетчика (кВт·ч)
+  fields:
+    value:
+      name: Значение
+      description: Новое значение в кВт·ч
+      required: true
+      selector:
+        number:
+          min: 0
+          step: 0.01
+          unit_of_measurement: "кВт·ч"
+
+set_night_kwh:
+  name: Установить ночные показания
+  description: Установить значение ночного счетчика (кВт·ч)
+  fields:
+    value:
+      name: Значение
+      description: Новое значение в кВт·ч
+      required: true
+      selector:
+        number:
+          min: 0
+          step: 0.01
+          unit_of_measurement: "кВт·ч"
+
+reset_monthly:
+  name: Сбросить месячные показания
+  description: Принудительный сброс счетчиков за месяц
