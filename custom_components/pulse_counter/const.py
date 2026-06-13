@@ -1,7 +1,7 @@
 """Константы для интеграции Pulse Counter Manager."""
 
 DOMAIN = "pulse_counter"
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 
 # Типы счетчиков
 METER_TYPE_ELECTRICITY = "electricity"

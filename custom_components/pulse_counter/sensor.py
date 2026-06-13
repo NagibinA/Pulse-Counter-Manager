@@ -69,7 +69,78 @@ class PulseCounterBaseSensor(SensorEntity):
         self.async_write_ha_state()
 
 
-# Общие сенсоры для всех типов
+"""Сенсоры для интеграции Pulse Counter Manager."""
+
+from homeassistant.components.sensor import SensorEntity
+from homeassistant.core import callback
+
+from .const import (
+    DOMAIN,
+    UNIT_RUB,
+    UNIT_KWH,
+    UNIT_M3,
+    UNIT_GCAL,
+    METER_TYPE_ELECTRICITY,
+    METER_TYPE_WATER,
+    METER_TYPE_GAS,
+    METER_TYPE_HEAT,
+)
+
+
+async def async_setup_entry(hass, entry, async_add_entities):
+    """Настройка сенсоров."""
+    sensors = []
+    
+    for handler_id, handler in hass.data[DOMAIN]["handlers"].items():
+        meter_type = handler.meter_type
+        
+        if meter_type == METER_TYPE_ELECTRICITY:
+            sensors.extend([
+                PulseCounterTotalValueSensor(handler),
+                PulseCounterDayKwhSensor(handler),
+                PulseCounterNightKwhSensor(handler),
+                PulseCounterMonthDayKwhSensor(handler),
+                PulseCounterMonthNightKwhSensor(handler),
+                PulseCounterMonthTotalKwhSensor(handler),
+                PulseCounterMonthDayCostSensor(handler),
+                PulseCounterMonthNightCostSensor(handler),
+                PulseCounterMonthTotalCostSensor(handler),
+                PulseCounterImpulsesSensor(handler),
+            ])
+        else:
+            # Для воды, газа, тепла
+            sensors.extend([
+                PulseCounterTotalValueSensor(handler),
+                PulseCounterMonthValueSensor(handler),
+                PulseCounterMonthCostSensor(handler),
+                PulseCounterImpulsesSensor(handler),
+            ])
+    
+    async_add_entities(sensors, True)
+
+
+class PulseCounterBaseSensor(SensorEntity):
+    """Базовый класс сенсора."""
+
+    def __init__(self, handler):
+        self.handler = handler
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, handler.counter_id)},
+            "name": handler.name,
+            "manufacturer": "NagibinA",
+            "model": f"Pulse Counter ({handler.meter_type})",
+        }
+        self._attr_should_poll = False
+
+    async def async_added_to_hass(self):
+        self.async_on_remove(self.handler.async_add_listener(self._async_update))
+
+    @callback
+    def _async_update(self):
+        self.async_write_ha_state()
+
+
+# ========== Общие сенсоры для всех типов ==========
 
 class PulseCounterTotalValueSensor(PulseCounterBaseSensor):
     """Общее потребление (все время)."""
@@ -156,7 +227,7 @@ class PulseCounterImpulsesSensor(PulseCounterBaseSensor):
         return self.handler.current_raw_impulses
 
 
-# Специфичные сенсоры для электроэнергии
+# ========== Специфичные сенсоры для электроэнергии ==========
 
 class PulseCounterDayKwhSensor(PulseCounterBaseSensor):
     """Дневное потребление (все время)."""
@@ -174,6 +245,14 @@ class PulseCounterDayKwhSensor(PulseCounterBaseSensor):
     def state(self):
         return round(self.handler.day_kwh, 2)
 
+    @property
+    def extra_state_attributes(self):
+        return {
+            "pulses_per_kwh": self.handler.pulses_per_unit,
+            "accumulated_impulses": self.handler._day_partial,
+            "accumulated_kwh": round(self.handler._day_partial / self.handler.pulses_per_unit, 3),
+        }
+
 
 class PulseCounterNightKwhSensor(PulseCounterBaseSensor):
     """Ночное потребление (все время)."""
@@ -190,6 +269,14 @@ class PulseCounterNightKwhSensor(PulseCounterBaseSensor):
     @property
     def state(self):
         return round(self.handler.night_kwh, 2)
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "pulses_per_kwh": self.handler.pulses_per_unit,
+            "accumulated_impulses": self.handler._night_partial,
+            "accumulated_kwh": round(self.handler._night_partial / self.handler.pulses_per_unit, 3),
+        }
 
 
 class PulseCounterMonthDayKwhSensor(PulseCounterBaseSensor):

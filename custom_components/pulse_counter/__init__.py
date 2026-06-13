@@ -4,7 +4,7 @@ import logging
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
+from homeassistant.const import Platform, EVENT_HOMEASSISTANT_START, EVENT_HOMEASSISTANT_STOP
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import (
@@ -46,13 +46,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     counters = entry.data.get(CONF_COUNTERS, {})
     
+    # Создаем обработчики для каждого счетчика
     for counter_name, counter_config in counters.items():
         meter_type = counter_config.get("meter_type", METER_TYPE_ELECTRICITY)
         
         if meter_type == METER_TYPE_ELECTRICITY:
             handler_class = PulseCounterMQTTHandler
         else:
-            # Для воды, газа, тепла - пока один класс, потом разделим
+            # Для воды, газа, тепла
             handler_class = PulseCounterWaterMQTTHandler
         
         handler = handler_class(
@@ -66,10 +67,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await handler.async_initialize()
         hass.data[DOMAIN]["handlers"][counter_config[CONF_COUNTER_ID]] = handler
     
+    # Регистрируем платформы сенсоров
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     
+    # Добавляем слушатель обновления опций
     entry.async_on_unload(entry.add_update_listener(update_listener))
     
+    # Слушатель для добавления нового счетчика через опции
     async def async_add_counter(counter_config):
         meter_type = counter_config.get("meter_type", METER_TYPE_ELECTRICITY)
         
@@ -94,12 +98,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async_dispatcher_connect(hass, f"{DOMAIN}_add_counter", async_add_counter)
     )
     
+    # Обработчики событий остановки и запуска HA
+    async def handle_ha_stop(event):
+        """При остановке HA останавливаем опрос ESP."""
+        for handler in hass.data[DOMAIN]["handlers"].values():
+            handler.async_stop_polling()
+        _LOGGER.info("Остановлен опрос всех счетчиков при выключении Home Assistant")
+
+    async def handle_ha_start(event):
+        """При запуске HA возобновляем опрос ESP."""
+        for handler in hass.data[DOMAIN]["handlers"].values():
+            await handler.async_start_polling()
+        _LOGGER.info("Возобновлен опрос всех счетчиков при запуске Home Assistant")
+    
+    # Регистрируем обработчики событий
+    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, handle_ha_stop)
+    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_START, handle_ha_start)
+    
+    _LOGGER.info("Pulse Counter Manager v%s успешно загружен с %d счетчиками", 
+                 VERSION, len(hass.data[DOMAIN]["handlers"]))
+    
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Выгрузка интеграции."""
     
+    # Останавливаем все обработчики
     for handler_id, handler in hass.data[DOMAIN]["handlers"].items():
         await handler.async_shutdown()
     
@@ -109,10 +134,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     if unload_ok:
         hass.data.pop(DOMAIN)
+        _LOGGER.info("Pulse Counter Manager успешно выгружен")
+    else:
+        _LOGGER.error("Ошибка при выгрузке Pulse Counter Manager")
     
     return unload_ok
 
 
 async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Обработчик обновления опций."""
+    _LOGGER.info("Обновление конфигурации Pulse Counter Manager")
     await hass.config_entries.async_reload(entry.entry_id)

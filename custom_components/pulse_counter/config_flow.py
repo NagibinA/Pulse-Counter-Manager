@@ -60,6 +60,8 @@ from .const import (
     DEFAULT_LEGACY_TOPIC_NIGHT,
 )
 
+from .storage import PulseCounterStorage
+
 _LOGGER = logging.getLogger(__name__)
 
 MQTT_SCHEMA = vol.Schema({
@@ -139,6 +141,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry):
         self._entry = config_entry
         self._meter_type = None
+        self._selected_counter_id = None
     
     async def async_step_init(self, user_input=None):
         """Главное меню."""
@@ -179,17 +182,16 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         errors = {}
         defaults = METER_DEFAULTS[self._meter_type]
         counters = self._entry.data.get(CONF_COUNTERS, {})
-        used_names = list(counters.keys())
+        used_ids = list(counters.keys())
         
         if user_input is not None:
             try:
                 counter_name = user_input[CONF_NAME]
+                counter_id = f"counter_{counter_name.lower().replace(' ', '_')}"
                 
-                if counter_name in used_names:
+                if counter_id in used_ids:
                     errors[CONF_NAME] = "name_exists"
                 else:
-                    counter_id = f"counter_{counter_name.lower().replace(' ', '_')}"
-                    
                     # Общие поля для всех типов
                     new_counter = {
                         CONF_COUNTER_ID: counter_id,
@@ -229,8 +231,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             CONF_LEGACY_TOPIC: user_input.get(CONF_LEGACY_TOPIC, DEFAULT_LEGACY_TOPIC),
                         })
                     
+                    # КЛЮЧОМ СЛОВАРЯ ДОЛЖЕН БЫТЬ counter_id, А НЕ counter_name!
                     new_counters = dict(counters)
-                    new_counters[counter_name] = new_counter
+                    new_counters[counter_id] = new_counter
                     
                     self.hass.config_entries.async_update_entry(
                         self._entry,
@@ -296,10 +299,35 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         if not counters:
             return self.async_abort(reason="no_counters")
         
-        counter_options = {counter_id: config[CONF_NAME] for counter_id, config in counters.items()}
+        # Логируем все счетчики в конфиге
+        _LOGGER.warning("=" * 60)
+        _LOGGER.warning("=== ВСЕ СЧЕТЧИКИ В КОНФИГЕ ===")
+        for cid, cconfig in counters.items():
+            _LOGGER.warning("ID: %s, NAME: %s", cid, cconfig[CONF_NAME])
+        _LOGGER.warning("=" * 60)
+        
+        # Создаем словарь для выбора: ключ = counter_id, значение = название
+        counter_options = {}
+        for cid, cconfig in counters.items():
+            counter_options[cid] = cconfig[CONF_NAME]
+        
+        _LOGGER.warning("=== counter_options (ID -> NAME): %s ===", counter_options)
         
         if user_input is not None:
-            self._selected_counter_id = user_input["counter_id"]
+            selected_id = user_input["counter_id"]
+            _LOGGER.warning("=== user_input['counter_id'] = %s (тип: %s) ===", selected_id, type(selected_id))
+            _LOGGER.warning("=== ВЫБРАН ID ИЗ ФОРМЫ: %s ===", selected_id)
+            
+            # Проверяем, существует ли такой ID
+            if selected_id in counters:
+                self._selected_counter_id = selected_id
+                counter_name = counters[selected_id][CONF_NAME]
+                _LOGGER.warning("=== ВЫБРАН СЧЕТЧИК: ID=%s, ИМЯ=%s ===", selected_id, counter_name)
+            else:
+                _LOGGER.warning("=== ОШИБКА: ID %s НЕ НАЙДЕН В СЧЕТЧИКАХ! ===", selected_id)
+                _LOGGER.warning("=== Доступные ID: %s ===", list(counters.keys()))
+                return self.async_abort(reason="invalid_counter")
+            
             return await self.async_step_edit_choice()
         
         return self.async_show_form(
@@ -309,22 +337,31 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     
     async def async_step_edit_choice(self, user_input=None):
         """Действия с выбранным счетчиком."""
+        _LOGGER.warning("=== async_step_edit_choice ВЫЗВАН, selected_counter_id=%s ===", self._selected_counter_id)
+        
         actions = {
             "edit_current": "Изменить текущие показания",
             "edit_month_start": "Изменить показания на начало месяца",
+            "edit_accumulated": "Изменить накопленные импульсы",
             "edit_tariffs": "Изменить тарифы",
+            "edit_pulses": "Изменить коэффициент импульсов",
             "edit_topics": "Изменить MQTT топики",
             "delete": "Удалить счетчик",
         }
         
         if user_input is not None:
             action = user_input["action"]
+            _LOGGER.warning("=== ВЫБРАНО ДЕЙСТВИЕ: %s ===", action)
             if action == "edit_current":
                 return await self.async_step_edit_current()
             elif action == "edit_month_start":
                 return await self.async_step_edit_month_start()
+            elif action == "edit_accumulated":
+                return await self.async_step_edit_accumulated()
             elif action == "edit_tariffs":
                 return await self.async_step_edit_tariffs()
+            elif action == "edit_pulses":
+                return await self.async_step_edit_pulses()
             elif action == "edit_topics":
                 return await self.async_step_edit_topics()
             elif action == "delete":
@@ -335,29 +372,54 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=vol.Schema({vol.Required("action"): vol.In(actions)})
         )
     
+    def _get_handler_by_counter_id(self):
+        """Получить handler по counter_id."""
+        _LOGGER.warning("=== _get_handler_by_counter_id: ищем handler для ID=%s ===", self._selected_counter_id)
+        handlers = self.hass.data[DOMAIN]["handlers"]
+        _LOGGER.warning("=== Доступные handler ID: %s ===", list(handlers.keys()))
+        handler = handlers.get(self._selected_counter_id)
+        _LOGGER.warning("=== handler найден: %s ===", handler is not None)
+        return handler
+    
     async def async_step_edit_current(self, user_input=None):
         """Изменение текущих показаний."""
         counter = self._entry.data[CONF_COUNTERS][self._selected_counter_id]
         meter_type = counter[CONF_METER_TYPE]
         
         if user_input is not None:
-            handler = self.hass.data[DOMAIN]["handlers"].get(self._selected_counter_id)
+            handler = self._get_handler_by_counter_id()
             if handler:
                 if meter_type == METER_TYPE_ELECTRICITY:
                     await handler.async_set_day_kwh(user_input["day_kwh"])
                     await handler.async_set_night_kwh(user_input["night_kwh"])
+                    _LOGGER.info("Изменены текущие показания для %s: день=%.1f, ночь=%.1f", 
+                                counter[CONF_NAME], user_input["day_kwh"], user_input["night_kwh"])
                 else:
                     await handler.async_set_total_value(user_input["total_value"])
+                    _LOGGER.info("Изменены текущие показания для %s: %.1f", 
+                                counter[CONF_NAME], user_input["total_value"])
             return self.async_create_entry(title="", data={})
         
+        # Загружаем значения напрямую из storage
+        storage = PulseCounterStorage(self.hass, counter[CONF_COUNTER_ID])
+        data = await storage.async_load()
+        
         if meter_type == METER_TYPE_ELECTRICITY:
+            current_day = data.get("day_total_kwh", 0) if data else 0
+            current_night = data.get("night_total_kwh", 0) if data else 0
+            _LOGGER.info("Текущие показания для %s из storage: день=%.1f, ночь=%.1f", 
+                        counter[CONF_NAME], current_day, current_night)
+            
             schema = vol.Schema({
-                vol.Required("day_kwh", default=counter.get(CONF_INITIAL_DAY_KWH, 0)): vol.Coerce(float),
-                vol.Required("night_kwh", default=counter.get(CONF_INITIAL_NIGHT_KWH, 0)): vol.Coerce(float),
+                vol.Required("day_kwh", default=current_day): vol.Coerce(float),
+                vol.Required("night_kwh", default=current_night): vol.Coerce(float),
             })
         else:
+            current_val = data.get("total_value", 0) if data else 0
+            _LOGGER.info("Текущие показания для %s из storage: %.1f", counter[CONF_NAME], current_val)
+            
             schema = vol.Schema({
-                vol.Required("total_value", default=counter.get(CONF_INITIAL_VALUE, 0)): vol.Coerce(float),
+                vol.Required("total_value", default=current_val): vol.Coerce(float),
             })
         
         return self.async_show_form(step_id="edit_current", data_schema=schema)
@@ -368,26 +430,115 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         meter_type = counter[CONF_METER_TYPE]
         
         if user_input is not None:
-            handler = self.hass.data[DOMAIN]["handlers"].get(self._selected_counter_id)
+            handler = self._get_handler_by_counter_id()
             if handler:
                 if meter_type == METER_TYPE_ELECTRICITY:
                     await handler.async_set_month_start_day(user_input["month_start_day"])
                     await handler.async_set_month_start_night(user_input["month_start_night"])
+                    _LOGGER.info("Изменено начало месяца для %s: день=%.1f, ночь=%.1f", 
+                                counter[CONF_NAME], user_input["month_start_day"], user_input["month_start_night"])
                 else:
                     await handler.async_set_month_start_value(user_input["month_start_value"])
+                    _LOGGER.info("Изменено начало месяца для %s: %.1f", 
+                                counter[CONF_NAME], user_input["month_start_value"])
             return self.async_create_entry(title="", data={})
         
+        # Загружаем значения напрямую из storage
+        storage = PulseCounterStorage(self.hass, counter[CONF_COUNTER_ID])
+        data = await storage.async_load()
+        
         if meter_type == METER_TYPE_ELECTRICITY:
+            current_day = data.get("month_start_day", 0) if data else 0
+            current_night = data.get("month_start_night", 0) if data else 0
+            _LOGGER.info("Начало месяца для %s из storage: день=%.1f, ночь=%.1f", 
+                        counter[CONF_NAME], current_day, current_night)
+            
             schema = vol.Schema({
-                vol.Required("month_start_day", default=counter.get(CONF_MONTH_START_DAY, 0)): vol.Coerce(float),
-                vol.Required("month_start_night", default=counter.get(CONF_MONTH_START_NIGHT, 0)): vol.Coerce(float),
+                vol.Required("month_start_day", default=current_day): vol.Coerce(float),
+                vol.Required("month_start_night", default=current_night): vol.Coerce(float),
             })
         else:
+            current_val = data.get("month_start_value", 0) if data else 0
+            _LOGGER.info("Начало месяца для %s из storage: %.1f", counter[CONF_NAME], current_val)
+            
             schema = vol.Schema({
-                vol.Required("month_start_value", default=counter.get(CONF_MONTH_START_VALUE, 0)): vol.Coerce(float),
+                vol.Required("month_start_value", default=current_val): vol.Coerce(float),
             })
         
         return self.async_show_form(step_id="edit_month_start", data_schema=schema)
+    
+    async def async_step_edit_accumulated(self, user_input=None):
+        """Изменение накопленных импульсов (остаток до 1000)."""
+        counter = self._entry.data[CONF_COUNTERS][self._selected_counter_id]
+        meter_type = counter.get(CONF_METER_TYPE, METER_TYPE_ELECTRICITY)
+        
+        _LOGGER.warning("=" * 60)
+        _LOGGER.warning("=== async_step_edit_accumulated ВЫЗВАН ===")
+        _LOGGER.warning("selected_counter_id: %s", self._selected_counter_id)
+        _LOGGER.warning("user_input: %s", user_input)
+        _LOGGER.warning("=" * 60)
+        
+        if user_input is not None:
+            _LOGGER.warning("=== ПОЛУЧЕНЫ ДАННЫЕ ОТ ФОРМЫ: %s ===", user_input)
+            
+            handler = self._get_handler_by_counter_id()
+            _LOGGER.warning("handler найден: %s", handler is not None)
+            
+            if handler:
+                if meter_type == METER_TYPE_ELECTRICITY:
+                    day_val = user_input.get("day_impulses", 0)
+                    night_val = user_input.get("night_impulses", 0)
+                    _LOGGER.warning("Принудительная установка: день=%s, ночь=%s", day_val, night_val)
+                    
+                    # Принудительно обновляем напрямую
+                    handler._day_partial = day_val
+                    handler._night_partial = night_val
+                    await handler._save_state()
+                    await handler._notify_listeners()
+                    _LOGGER.warning("=== ПРИНУДИТЕЛЬНО УСТАНОВЛЕНО: день=%d, ночь=%d ===", 
+                                   day_val, night_val)
+                else:
+                    val = user_input.get("impulses", 0)
+                    _LOGGER.warning("Принудительная установка: импульсы=%s", val)
+                    handler._partial = val
+                    await handler._save_state()
+                    await handler._notify_listeners()
+                    _LOGGER.warning("=== ПРИНУДИТЕЛЬНО УСТАНОВЛЕНО: импульсы=%d ===", val)
+            else:
+                _LOGGER.warning("=== handler НЕ НАЙДЕН! ===")
+            
+            return self.async_create_entry(title="", data={})
+        
+        # Загружаем значения напрямую из storage
+        _LOGGER.warning("=== ЗАГРУЗКА ЗНАЧЕНИЙ ИЗ STORAGE ===")
+        storage = PulseCounterStorage(self.hass, counter[CONF_COUNTER_ID])
+        data = await storage.async_load()
+        _LOGGER.warning("data из storage: %s", data)
+        
+        if meter_type == METER_TYPE_ELECTRICITY:
+            current_day = data.get("day_partial", 0) if data else 0
+            current_night = data.get("night_partial", 0) if data else 0
+            _LOGGER.warning("Текущие значения из storage: день=%d, ночь=%d", current_day, current_night)
+            
+            schema = vol.Schema({
+                vol.Required("day_impulses", default=current_day): int,
+                vol.Required("night_impulses", default=current_night): int,
+            })
+        else:
+            current_val = data.get("partial", 0) if data else 0
+            _LOGGER.warning("Текущие значения из storage: %d", current_val)
+            
+            schema = vol.Schema({
+                vol.Required("impulses", default=current_val): int,
+            })
+        
+        return self.async_show_form(
+            step_id="edit_accumulated",
+            data_schema=schema,
+            description_placeholders={
+                "name": counter[CONF_NAME]
+            }
+        )
     
     async def async_step_edit_tariffs(self, user_input=None):
         """Изменение тарифов."""
@@ -395,7 +546,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         meter_type = counter[CONF_METER_TYPE]
         
         if user_input is not None:
-            # Обновляем тарифы в конфиге
             new_counter = dict(counter)
             if meter_type == METER_TYPE_ELECTRICITY:
                 new_counter[CONF_DAY_TARIFF] = user_input[CONF_DAY_TARIFF]
@@ -413,8 +563,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 data={**self._entry.data, CONF_COUNTERS: counters}
             )
             
-            # Обновляем в handler
-            handler = self.hass.data[DOMAIN]["handlers"].get(self._selected_counter_id)
+            handler = self._get_handler_by_counter_id()
             if handler:
                 if meter_type == METER_TYPE_ELECTRICITY:
                     handler.day_tariff = user_input[CONF_DAY_TARIFF]
@@ -426,19 +575,59 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             
             return self.async_create_entry(title="", data={})
         
+        handler = self._get_handler_by_counter_id()
+        
         if meter_type == METER_TYPE_ELECTRICITY:
             schema = vol.Schema({
-                vol.Required(CONF_DAY_TARIFF, default=counter.get(CONF_DAY_TARIFF, DEFAULT_DAY_TARIFF)): vol.Coerce(float),
-                vol.Required(CONF_NIGHT_TARIFF, default=counter.get(CONF_NIGHT_TARIFF, DEFAULT_NIGHT_TARIFF)): vol.Coerce(float),
-                vol.Required(CONF_NIGHT_START, default=counter.get(CONF_NIGHT_START, DEFAULT_NIGHT_START)): str,
-                vol.Required(CONF_NIGHT_END, default=counter.get(CONF_NIGHT_END, DEFAULT_NIGHT_END)): str,
+                vol.Required(CONF_DAY_TARIFF, default=handler.day_tariff if handler else DEFAULT_DAY_TARIFF): vol.Coerce(float),
+                vol.Required(CONF_NIGHT_TARIFF, default=handler.night_tariff if handler else DEFAULT_NIGHT_TARIFF): vol.Coerce(float),
+                vol.Required(CONF_NIGHT_START, default=handler.night_start if handler else DEFAULT_NIGHT_START): str,
+                vol.Required(CONF_NIGHT_END, default=handler.night_end if handler else DEFAULT_NIGHT_END): str,
             })
         else:
             schema = vol.Schema({
-                vol.Required(CONF_TARIFF, default=counter.get(CONF_TARIFF, DEFAULT_TARIFF)): vol.Coerce(float),
+                vol.Required(CONF_TARIFF, default=handler.tariff if handler else DEFAULT_TARIFF): vol.Coerce(float),
             })
         
         return self.async_show_form(step_id="edit_tariffs", data_schema=schema)
+    
+    async def async_step_edit_pulses(self, user_input=None):
+        """Изменение коэффициента импульсов."""
+        counter = self._entry.data[CONF_COUNTERS][self._selected_counter_id]
+        meter_type = counter.get(CONF_METER_TYPE, METER_TYPE_ELECTRICITY)
+        unit = counter.get(CONF_UNIT, METER_DEFAULTS.get(meter_type, {}).get("unit", "ед"))
+        
+        if user_input is not None:
+            new_counter = dict(counter)
+            new_counter[CONF_PULSES_PER_UNIT] = user_input["pulses_per_unit"]
+            
+            counters = dict(self._entry.data[CONF_COUNTERS])
+            counters[self._selected_counter_id] = new_counter
+            
+            self.hass.config_entries.async_update_entry(
+                self._entry,
+                data={**self._entry.data, CONF_COUNTERS: counters}
+            )
+            
+            handler = self._get_handler_by_counter_id()
+            if handler:
+                old_value = handler.pulses_per_unit
+                handler.pulses_per_unit = user_input["pulses_per_unit"]
+                _LOGGER.info("Изменен коэффициент импульсов для %s: %d -> %d импульсов на %s", 
+                            counter[CONF_NAME], old_value, user_input["pulses_per_unit"], unit)
+            
+            return self.async_create_entry(title="", data={})
+        
+        handler = self._get_handler_by_counter_id()
+        
+        schema = vol.Schema({
+            vol.Required("pulses_per_unit", default=handler.pulses_per_unit if handler else DEFAULT_PULSES_PER_UNIT): int,
+        })
+        
+        return self.async_show_form(
+            step_id="edit_pulses",
+            data_schema=schema
+        )
     
     async def async_step_edit_topics(self, user_input=None):
         """Изменение MQTT топиков."""
@@ -464,22 +653,23 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 data={**self._entry.data, CONF_COUNTERS: counters}
             )
             
-            # Перезагружаем интеграцию для применения новых топиков
             await self.hass.config_entries.async_reload(self._entry.entry_id)
             
             return self.async_create_entry(title="", data={})
         
+        handler = self._get_handler_by_counter_id()
+        
         if meter_type == METER_TYPE_ELECTRICITY:
             schema = vol.Schema({
-                vol.Required(CONF_MQTT_TOPIC_DAY, default=counter.get(CONF_MQTT_TOPIC_DAY, DEFAULT_MQTT_TOPIC_DAY)): str,
-                vol.Required(CONF_MQTT_TOPIC_NIGHT, default=counter.get(CONF_MQTT_TOPIC_NIGHT, DEFAULT_MQTT_TOPIC_NIGHT)): str,
-                vol.Required(CONF_MQTT_TOPIC_COMMAND, default=counter.get(CONF_MQTT_TOPIC_COMMAND, DEFAULT_MQTT_TOPIC_COMMAND)): str,
-                vol.Required(CONF_MQTT_TOPIC_AVAILABLE, default=counter.get(CONF_MQTT_TOPIC_AVAILABLE, DEFAULT_MQTT_TOPIC_AVAILABLE)): str,
+                vol.Required(CONF_MQTT_TOPIC_DAY, default=handler.topic_day if handler else DEFAULT_MQTT_TOPIC_DAY): str,
+                vol.Required(CONF_MQTT_TOPIC_NIGHT, default=handler.topic_night if handler else DEFAULT_MQTT_TOPIC_NIGHT): str,
+                vol.Required(CONF_MQTT_TOPIC_COMMAND, default=handler.topic_command if handler else DEFAULT_MQTT_TOPIC_COMMAND): str,
+                vol.Required(CONF_MQTT_TOPIC_AVAILABLE, default=handler.topic_available if handler else DEFAULT_MQTT_TOPIC_AVAILABLE): str,
             })
         else:
             schema = vol.Schema({
-                vol.Required(CONF_MQTT_TOPIC_MAIN, default=counter.get(CONF_MQTT_TOPIC_MAIN, DEFAULT_MQTT_TOPIC_MAIN)): str,
-                vol.Optional(CONF_MQTT_TOPIC_AVAILABLE, default=counter.get(CONF_MQTT_TOPIC_AVAILABLE, "")): str,
+                vol.Required(CONF_MQTT_TOPIC_MAIN, default=handler.topic_main if handler else DEFAULT_MQTT_TOPIC_MAIN): str,
+                vol.Optional(CONF_MQTT_TOPIC_AVAILABLE, default=handler.topic_available if handler else ""): str,
             })
         
         return self.async_show_form(step_id="edit_topics", data_schema=schema)
@@ -497,11 +687,12 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             
             return self.async_create_entry(title="", data={})
         
+        counter = self._entry.data[CONF_COUNTERS][self._selected_counter_id]
+        
         return self.async_show_form(
             step_id="delete_counter",
             data_schema=vol.Schema({}),
-            description_placements={
-                "title": "Удаление счетчика",
-                "description": f"Вы уверены, что хотите удалить счетчик '{self._selected_counter_id}'?"
+            description_placeholders={
+                "name": counter[CONF_NAME]
             }
         )
