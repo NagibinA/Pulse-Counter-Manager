@@ -9,14 +9,22 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import (
     DOMAIN,
+    VERSION,
     CONF_COUNTERS,
     CONF_MQTT_BROKER,
     CONF_MQTT_PORT,
     CONF_MQTT_USERNAME,
     CONF_MQTT_PASSWORD,
     CONF_COUNTER_ID,
+    METER_TYPE_ELECTRICITY,
 )
-from .mqtt_handler import PulseCounterMQTTHandler
+
+from .mqtt_handler import (
+    PulseCounterMQTTHandler,
+    PulseCounterWaterMQTTHandler,
+    PulseCounterGasMQTTHandler,
+    PulseCounterHeatMQTTHandler,
+)
 
 PLATFORMS = [Platform.SENSOR]
 
@@ -39,7 +47,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     counters = entry.data.get(CONF_COUNTERS, {})
     
     for counter_name, counter_config in counters.items():
-        handler = PulseCounterMQTTHandler(
+        meter_type = counter_config.get("meter_type", METER_TYPE_ELECTRICITY)
+        
+        if meter_type == METER_TYPE_ELECTRICITY:
+            handler_class = PulseCounterMQTTHandler
+        else:
+            # Для воды, газа, тепла - пока один класс, потом разделим
+            handler_class = PulseCounterWaterMQTTHandler
+        
+        handler = handler_class(
             hass,
             broker=broker,
             port=port,
@@ -55,7 +71,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(update_listener))
     
     async def async_add_counter(counter_config):
-        handler = PulseCounterMQTTHandler(
+        meter_type = counter_config.get("meter_type", METER_TYPE_ELECTRICITY)
+        
+        if meter_type == METER_TYPE_ELECTRICITY:
+            handler_class = PulseCounterMQTTHandler
+        else:
+            handler_class = PulseCounterWaterMQTTHandler
+        
+        handler = handler_class(
             hass,
             broker=broker,
             port=port,
