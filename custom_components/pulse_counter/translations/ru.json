@@ -43,20 +43,21 @@
         "description": "Настройте параметры счетчика",
         "data": {
           "name": "Название счетчика",
+          "meter_type": "Тип счетчика",
           "topic_day": "MQTT топик (день)",
           "topic_night": "MQTT топик (ночь)",
           "topic_main": "MQTT топик",
           "topic_command": "MQTT топик команд",
           "topic_available": "MQTT топик статуса",
-          "day_tariff": "Дневной тариф",
-          "night_tariff": "Ночной тариф",
-          "tariff": "Тариф",
+          "day_tariff": "Дневной тариф (руб/кВт·ч)",
+          "night_tariff": "Ночной тариф (руб/кВт·ч)",
+          "tariff": "Тариф (руб/ед)",
           "night_start": "Начало ночного тарифа",
           "night_end": "Конец ночного тарифа",
           "pulses_per_unit": "Импульсов на единицу",
-          "initial_value": "Начальные показания",
-          "initial_day_kwh": "Начальные показания (день)",
-          "initial_night_kwh": "Начальные показания (ночь)",
+          "initial_value": "Текущие показания",
+          "initial_day_kwh": "Текущие показания (день)",
+          "initial_night_kwh": "Текущие показания (ночь)",
           "month_start_value": "Показания на начало месяца",
           "month_start_day": "Показания на начало месяца (день)",
           "month_start_night": "Показания на начало месяца (ночь)",
@@ -106,7 +107,7 @@
           "night_tariff": "Ночной тариф (руб/кВт·ч)",
           "night_start": "Начало ночного тарифа",
           "night_end": "Конец ночного тарифа",
-          "tariff": "Тариф (руб/единицу)"
+          "tariff": "Тариф (руб/ед)"
         }
       },
       "edit_topics": {
