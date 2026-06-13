@@ -1,6 +1,9 @@
 set_day_kwh:
   name: Установить дневные показания
   description: Установить значение дневного счетчика (кВт·ч)
+  target:
+    entity:
+      integration: pulse_counter
   fields:
     value:
       name: Значение
@@ -15,6 +18,9 @@ set_day_kwh:
 set_night_kwh:
   name: Установить ночные показания
   description: Установить значение ночного счетчика (кВт·ч)
+  target:
+    entity:
+      integration: pulse_counter
   fields:
     value:
       name: Значение
@@ -26,6 +32,25 @@ set_night_kwh:
           step: 0.01
           unit_of_measurement: "кВт·ч"
 
+set_total_value:
+  name: Установить показания
+  description: Установить значение счетчика
+  target:
+    entity:
+      integration: pulse_counter
+  fields:
+    value:
+      name: Значение
+      description: Новое значение
+      required: true
+      selector:
+        number:
+          min: 0
+          step: 0.01
+
 reset_monthly:
   name: Сбросить месячные показания
   description: Принудительный сброс счетчиков за месяц
+  target:
+    entity:
+      integration: pulse_counter
