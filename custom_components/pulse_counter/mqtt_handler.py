@@ -86,6 +86,7 @@ class PulseCounterMQTTHandler:
         # Для сенсора "Имп./мин."
         self._last_day_impulses_raw = 0
         self._last_night_impulses_raw = 0
+        self._last_impulses_per_minute = 0
         
         _LOGGER.info("Инициализирован обработчик для счетчика %s", self.name)
 
@@ -100,8 +101,9 @@ class PulseCounterMQTTHandler:
     async def async_initialize(self):
         await self._connect_mqtt()
         await self._update_current_tariff()
-        self._schedule_tariff_switching()
+        self._schedule_tariff_switching()      # отправка команд каждую минуту
         self._schedule_monthly_reset_check()
+        self._schedule_impulses_update()        # обновление сенсора каждую минуту
         if self.legacy_mqtt:
             self._schedule_legacy_updates()
         _LOGGER.info("Обработчик счетчика %s запущен", self.name)
@@ -172,6 +174,7 @@ class PulseCounterMQTTHandler:
                 kwh_added = total // self.pulses_per_kwh
                 self._day_total_kwh += kwh_added
                 self._day_partial = total % self.pulses_per_kwh
+                _LOGGER.debug("День: +%d кВт·ч, всего=%.1f", kwh_added, self._day_total_kwh)
             else:
                 self._day_partial = total
         else:
@@ -180,12 +183,14 @@ class PulseCounterMQTTHandler:
                 kwh_added = total // self.pulses_per_kwh
                 self._night_total_kwh += kwh_added
                 self._night_partial = total % self.pulses_per_kwh
+                _LOGGER.debug("Ночь: +%d кВт·ч, всего=%.1f", kwh_added, self._night_total_kwh)
             else:
                 self._night_partial = total
         
         await self._notify_listeners()
 
     async def _update_current_tariff(self):
+        """Определение текущего тарифа и отправка команды КАЖДУЮ МИНУТУ."""
         now = dt_util.now().time()
         night_start = datetime.strptime(self.night_start, "%H:%M").time()
         night_end = datetime.strptime(self.night_end, "%H:%M").time()
@@ -197,21 +202,51 @@ class PulseCounterMQTTHandler:
         
         new_tariff = STATE_NIGHT if is_night else STATE_DAY
         
+        # Обновляем текущий тариф если изменился
         if new_tariff != self.current_tariff:
             self.current_tariff = new_tariff
-            await self._send_command(self.current_tariff)
+            _LOGGER.debug("Тариф изменился: %s", self.current_tariff)
+        
+        # ОТПРАВЛЯЕМ КОМАНДУ КАЖДУЮ МИНУТУ
+        await self._send_command(self.current_tariff)
 
     async def _send_command(self, command: str):
+        """Отправка команды на ESP."""
         if not self.esp_available:
+            _LOGGER.debug("ESP недоступна, команда %s не отправлена", command)
             return
         if self._client:
             self._client.publish(self.topic_command, command)
-            _LOGGER.debug("Отправлена команда: %s", command)
+            _LOGGER.debug("Отправлена команда: %s в топик %s", command, self.topic_command)
+        else:
+            _LOGGER.warning("Нет клиента, команда не отправлена")
+
+    async def _update_impulses_per_minute(self):
+        """Обновление сенсора импульсов (даже если нет новых)."""
+        if self.current_tariff == STATE_DAY:
+            self._last_impulses_per_minute = self._last_day_impulses_raw
+        else:
+            self._last_impulses_per_minute = self._last_night_impulses_raw
+        
+        # Обнуляем сырые значения после того, как они были показаны
+        if self.current_tariff == STATE_DAY:
+            self._last_day_impulses_raw = 0
+        else:
+            self._last_night_impulses_raw = 0
+        
+        await self._notify_listeners()
 
     def _schedule_tariff_switching(self):
+        """Периодическая проверка тарифа и отправка команд каждую минуту."""
         async def _check_tariff(now):
             await self._update_current_tariff()
-        async_track_time_change(self.hass, _check_tariff, minute=range(0, 60), second=0)
+        async_track_time_change(self.hass, _check_tariff, second=0)
+
+    def _schedule_impulses_update(self):
+        """Запланировать обновление сенсора импульсов каждую минуту."""
+        async def _update(now):
+            await self._update_impulses_per_minute()
+        async_track_time_change(self.hass, _update, second=5)  # чуть позже, после отправки команды
 
     def _schedule_monthly_reset_check(self):
         async def _check_reset(now):
@@ -301,8 +336,5 @@ class PulseCounterMQTTHandler:
 
     @property
     def current_raw_impulses(self) -> int:
-        """Сырое значение импульсов за минуту (без обработки)."""
-        if self.current_tariff == STATE_DAY:
-            return self._last_day_impulses_raw
-        else:
-            return self._last_night_impulses_raw
+        """Текущее значение для сенсора Имп./мин."""
+        return self._last_impulses_per_minute
