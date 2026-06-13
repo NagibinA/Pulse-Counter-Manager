@@ -6,12 +6,13 @@
     },
     "error": {
       "cannot_connect": "Не удалось подключиться к MQTT брокеру",
-      "invalid_data": "Неверные данные"
+      "invalid_data": "Неверные данные",
+      "name_exists": "Счетчик с таким именем уже существует"
     },
     "step": {
       "user": {
         "title": "Подключение к MQTT",
-        "description": "Введите параметры подключения к MQTT брокеру. По умолчанию: 192.168.1.11:1883",
+        "description": "Введите параметры подключения к MQTT брокеру",
         "data": {
           "broker": "Адрес брокера",
           "port": "Порт",
@@ -30,6 +31,13 @@
           "action": "Действие"
         }
       },
+      "select_type": {
+        "title": "Тип счетчика",
+        "description": "Выберите тип добавляемого счетчика",
+        "data": {
+          "meter_type": "Тип счетчика"
+        }
+      },
       "add_counter": {
         "title": "Добавление счетчика",
         "description": "Настройте параметры счетчика",
@@ -37,24 +45,85 @@
           "name": "Название счетчика",
           "topic_day": "MQTT топик (день)",
           "topic_night": "MQTT топик (ночь)",
+          "topic_main": "MQTT топик",
           "topic_command": "MQTT топик команд",
           "topic_available": "MQTT топик статуса",
+          "day_tariff": "Дневной тариф",
+          "night_tariff": "Ночной тариф",
+          "tariff": "Тариф",
+          "night_start": "Начало ночного тарифа",
+          "night_end": "Конец ночного тарифа",
+          "pulses_per_unit": "Импульсов на единицу",
+          "initial_value": "Начальные показания",
+          "initial_day_kwh": "Начальные показания (день)",
+          "initial_night_kwh": "Начальные показания (ночь)",
+          "month_start_value": "Показания на начало месяца",
+          "month_start_day": "Показания на начало месяца (день)",
+          "month_start_night": "Показания на начало месяца (ночь)",
+          "legacy_mqtt": "Отправка в legacy топики",
+          "legacy_topic": "Legacy топик",
+          "legacy_topic_day": "Legacy топик (день)",
+          "legacy_topic_night": "Legacy топик (ночь)"
+        }
+      },
+      "edit_counter": {
+        "title": "Выбор счетчика",
+        "description": "Выберите счетчик для редактирования",
+        "data": {
+          "counter_id": "Счетчик"
+        }
+      },
+      "edit_choice": {
+        "title": "Действие",
+        "description": "Выберите действие со счетчиком",
+        "data": {
+          "action": "Действие"
+        }
+      },
+      "edit_current": {
+        "title": "Текущие показания",
+        "description": "Введите текущие показания счетчика",
+        "data": {
+          "day_kwh": "Дневные показания (кВт·ч)",
+          "night_kwh": "Ночные показания (кВт·ч)",
+          "total_value": "Показания"
+        }
+      },
+      "edit_month_start": {
+        "title": "Начало месяца",
+        "description": "Введите показания на начало текущего месяца",
+        "data": {
+          "month_start_day": "Дневные показания на начало месяца (кВт·ч)",
+          "month_start_night": "Ночные показания на начало месяца (кВт·ч)",
+          "month_start_value": "Показания на начало месяца"
+        }
+      },
+      "edit_tariffs": {
+        "title": "Тарифы",
+        "description": "Измените тарифы",
+        "data": {
           "day_tariff": "Дневной тариф (руб/кВт·ч)",
           "night_tariff": "Ночной тариф (руб/кВт·ч)",
           "night_start": "Начало ночного тарифа",
           "night_end": "Конец ночного тарифа",
-          "pulses_per_kwh": "Импульсов на кВт·ч",
-          "initial_day_kwh": "Начальные показания (день)",
-          "initial_night_kwh": "Начальные показания (ночь)",
-          "legacy_mqtt": "Отправка в legacy топики",
-          "legacy_topic_day": "Legacy топик (день)",
-          "legacy_topic_night": "Legacy топик (ночь)"
+          "tariff": "Тариф (руб/единицу)"
         }
+      },
+      "edit_topics": {
+        "title": "MQTT топики",
+        "description": "Измените MQTT топики",
+        "data": {
+          "topic_day": "Топик дня",
+          "topic_night": "Топик ночи",
+          "topic_main": "MQTT топик",
+          "topic_command": "Топик команд",
+          "topic_available": "Топик статуса"
+        }
+      },
+      "delete_counter": {
+        "title": "Удаление счетчика",
+        "description": "Подтвердите удаление счетчика"
       }
-    },
-    "error": {
-      "name_exists": "Счетчик с таким именем уже существует",
-      "invalid_data": "Неверные данные"
     }
   }
 }
