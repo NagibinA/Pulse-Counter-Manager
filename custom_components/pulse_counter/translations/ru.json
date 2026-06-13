@@ -1,46 +1,60 @@
 {
   "title": "Pulse Counter Manager",
   "config": {
+    "abort": {
+      "already_configured": "Устройство уже настроено"
+    },
+    "error": {
+      "cannot_connect": "Не удалось подключиться к MQTT брокеру",
+      "invalid_data": "Неверные данные"
+    },
     "step": {
       "user": {
-        "title": "MQTT настройки",
-        "description": "Настройте MQTT топики для связи с ESP",
+        "title": "Подключение к MQTT",
+        "description": "Введите параметры подключения к MQTT брокеру. По умолчанию: 192.168.1.11:1883",
         "data": {
-          "name": "Имя устройства",
-          "mqtt_topic_day": "MQTT топик день",
-          "mqtt_topic_night": "MQTT топик ночь",
-          "mqtt_topic_command": "MQTT топик команд",
-          "mqtt_topic_available": "MQTT топик статуса"
+          "broker": "Адрес брокера",
+          "port": "Порт",
+          "username": "Имя пользователя",
+          "password": "Пароль"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Управление счетчиками",
+        "description": "Выберите действие",
+        "data": {
+          "action": "Действие"
         }
       },
-      "tariff": {
-        "title": "Тарифы",
-        "description": "Настройте стоимость электроэнергии",
+      "add_counter": {
+        "title": "Добавление счетчика",
+        "description": "Настройте параметры счетчика",
         "data": {
+          "name": "Название счетчика",
+          "topic_day": "MQTT топик (день)",
+          "topic_night": "MQTT топик (ночь)",
+          "topic_command": "MQTT топик команд",
+          "topic_available": "MQTT топик статуса",
           "day_tariff": "Дневной тариф (руб/кВт·ч)",
           "night_tariff": "Ночной тариф (руб/кВт·ч)",
           "night_start": "Начало ночного тарифа",
           "night_end": "Конец ночного тарифа",
-          "pulses_per_kwh": "Импульсов на кВт·ч"
-        }
-      },
-      "initial_values": {
-        "title": "Начальные показания",
-        "description": "Введите текущие показания счетчика",
-        "data": {
-          "initial_day_kwh": "Дневной счетчик (кВт·ч)",
-          "initial_night_kwh": "Ночной счетчик (кВт·ч)"
-        }
-      },
-      "legacy": {
-        "title": "Совместимость",
-        "description": "Отправлять данные в другие MQTT топики",
-        "data": {
-          "legacy_mqtt": "Включить отправку",
-          "legacy_topic_day": "Топик для дневных показаний",
-          "legacy_topic_night": "Топик для ночных показаний"
+          "pulses_per_kwh": "Импульсов на кВт·ч",
+          "initial_day_kwh": "Начальные показания (день)",
+          "initial_night_kwh": "Начальные показания (ночь)",
+          "legacy_mqtt": "Отправка в legacy топики",
+          "legacy_topic_day": "Legacy топик (день)",
+          "legacy_topic_night": "Legacy топик (ночь)"
         }
       }
+    },
+    "error": {
+      "name_exists": "Счетчик с таким именем уже существует",
+      "invalid_data": "Неверные данные"
     }
   }
 }
