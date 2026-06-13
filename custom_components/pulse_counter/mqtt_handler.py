@@ -1,17 +1,19 @@
 """MQTT обработчик для связи с ESP."""
 
+import asyncio
 import logging
 from datetime import datetime
 
-from homeassistant.components import mqtt
+import paho.mqtt.client as mqtt
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    DOMAIN,
+    STATE_DAY,
+    STATE_NIGHT,
     CONF_NAME,
+    CONF_COUNTER_ID,
     CONF_MQTT_TOPIC_DAY,
     CONF_MQTT_TOPIC_NIGHT,
     CONF_MQTT_TOPIC_COMMAND,
@@ -26,10 +28,7 @@ from .const import (
     CONF_LEGACY_TOPIC_NIGHT,
     CONF_INITIAL_DAY_KWH,
     CONF_INITIAL_NIGHT_KWH,
-    STATE_DAY,
-    STATE_NIGHT,
 )
-from .storage import PulseCounterStorage
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,45 +36,58 @@ _LOGGER = logging.getLogger(__name__)
 class PulseCounterMQTTHandler:
     """Обработчик MQTT сообщений и накопления импульсов."""
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry):
+    def __init__(self, hass: HomeAssistant, broker: str, port: int, username: str, password: str, config: dict):
         self.hass = hass
-        self.entry = entry
-        self.name = entry.data[CONF_NAME]
-        self.entry_id = entry.entry_id
-
-        # MQTT топики
-        self.topic_day = entry.data[CONF_MQTT_TOPIC_DAY]
-        self.topic_night = entry.data[CONF_MQTT_TOPIC_NIGHT]
-        self.topic_command = entry.data[CONF_MQTT_TOPIC_COMMAND]
-        self.topic_available = entry.data[CONF_MQTT_TOPIC_AVAILABLE]
-
-        # Тарифы
-        self.day_tariff = entry.options.get(CONF_DAY_TARIFF, entry.data.get(CONF_DAY_TARIFF, 8.10))
-        self.night_tariff = entry.options.get(CONF_NIGHT_TARIFF, entry.data.get(CONF_NIGHT_TARIFF, 4.42))
+        self.config = config
+        self.name = config[CONF_NAME]
+        self.counter_id = config[CONF_COUNTER_ID]
         
-        # Время тарифов
-        self.night_start = entry.options.get(CONF_NIGHT_START, entry.data.get(CONF_NIGHT_START, "20:19"))
-        self.night_end = entry.options.get(CONF_NIGHT_END, entry.data.get(CONF_NIGHT_END, "04:19"))
-
-        self.pulses_per_kwh = entry.data.get(CONF_PULSES_PER_KWH, 1000)
-
-        # Legacy MQTT
-        self.legacy_mqtt = entry.data.get(CONF_LEGACY_MQTT, False)
-        self.legacy_topic_day = entry.data.get(CONF_LEGACY_TOPIC_DAY, "HomeAssistant/daily")
-        self.legacy_topic_night = entry.data.get(CONF_LEGACY_TOPIC_NIGHT, "HomeAssistant/nighttime")
-
-        # Состояние счетчика
+        self.broker = broker
+        self.port = port
+        self.username = username
+        self.password = password
+        
+        self.topic_day = config[CONF_MQTT_TOPIC_DAY]
+        self.topic_night = config[CONF_MQTT_TOPIC_NIGHT]
+        self.topic_command = config[CONF_MQTT_TOPIC_COMMAND]
+        self.topic_available = config[CONF_MQTT_TOPIC_AVAILABLE]
+        
+        self.day_tariff = config[CONF_DAY_TARIFF]
+        self.night_tariff = config[CONF_NIGHT_TARIFF]
+        self.night_start = config[CONF_NIGHT_START]
+        self.night_end = config[CONF_NIGHT_END]
+        self.pulses_per_kwh = config[CONF_PULSES_PER_KWH]
+        
+        self.legacy_mqtt = config.get(CONF_LEGACY_MQTT, False)
+        self.legacy_topic_day = config.get(CONF_LEGACY_TOPIC_DAY, "HomeAssistant/daily")
+        self.legacy_topic_night = config.get(CONF_LEGACY_TOPIC_NIGHT, "HomeAssistant/nighttime")
+        
         self._day_partial = 0
         self._night_partial = 0
-        self._day_total_kwh = entry.data.get(CONF_INITIAL_DAY_KWH, 0)
-        self._night_total_kwh = entry.data.get(CONF_INITIAL_NIGHT_KWH, 0)
-
+        self._day_total_kwh = config.get(CONF_INITIAL_DAY_KWH, 0)
+        self._night_total_kwh = config.get(CONF_INITIAL_NIGHT_KWH, 0)
+        
+        self._month_start_day = self._day_total_kwh
+        self._month_start_night = self._night_total_kwh
+        self._last_reset_date = None
+        
+        self._last_month_day = 0
+        self._last_month_night = 0
+        self._last_month_total = 0
+        self._last_month_date = None
+        
         self.current_tariff = STATE_DAY
         self.esp_available = False
-
-        self.storage = PulseCounterStorage(hass, self.entry_id)
+        
+        self._client = None
         self._is_shutdown = False
         self._listeners = []
+        
+        # Для сенсора "Имп./мин."
+        self._last_day_impulses_raw = 0
+        self._last_night_impulses_raw = 0
+        
+        _LOGGER.info("Инициализирован обработчик для счетчика %s", self.name)
 
     def async_add_listener(self, update_callback):
         self._listeners.append(update_callback)
@@ -86,93 +98,72 @@ class PulseCounterMQTTHandler:
             listener()
 
     async def async_initialize(self):
-        await self._load_state()
+        await self._connect_mqtt()
         await self._update_current_tariff()
-        await self._subscribe_mqtt()
         self._schedule_tariff_switching()
+        self._schedule_monthly_reset_check()
         if self.legacy_mqtt:
             self._schedule_legacy_updates()
-        _LOGGER.info(f"Инициализирован счетчик {self.name}")
+        _LOGGER.info("Обработчик счетчика %s запущен", self.name)
 
     async def async_shutdown(self):
         self._is_shutdown = True
-        await self._save_state()
-        await self.storage.async_close()
-        _LOGGER.info(f"Остановлен счетчик {self.name}")
+        if self._client:
+            self._client.loop_stop()
+            self._client.disconnect()
+        _LOGGER.info("Обработчик счетчика %s остановлен", self.name)
 
-    async def async_set_day_kwh(self, value: float):
-        self._day_total_kwh = value
-        await self._save_state()
-        await self._notify_listeners()
-        _LOGGER.info(f"Установлены дневные показания: {value} кВт·ч")
+    async def _connect_mqtt(self):
+        self._client = mqtt.Client()
+        self._client.on_connect = self._on_connect
+        self._client.on_message = self._on_message
+        
+        if self.username and self.password:
+            self._client.username_pw_set(self.username, self.password)
+        
+        self._client.connect(self.broker, self.port, 60)
+        self._client.loop_start()
+        
+        for _ in range(10):
+            if self._is_shutdown:
+                return
+            await asyncio.sleep(0.5)
+            if self._client.is_connected():
+                break
 
-    async def async_set_night_kwh(self, value: float):
-        self._night_total_kwh = value
-        await self._save_state()
-        await self._notify_listeners()
-        _LOGGER.info(f"Установлены ночные показания: {value} кВт·ч")
+    def _on_connect(self, client, userdata, flags, rc):
+        if rc == 0:
+            _LOGGER.info("Подключен к MQTT брокеру %s:%s для счетчика %s", self.broker, self.port, self.name)
+            self._client.subscribe(self.topic_day)
+            self._client.subscribe(self.topic_night)
+            self._client.subscribe(self.topic_available)
+        else:
+            _LOGGER.error("Ошибка подключения к MQTT: %s", rc)
 
-    async def async_reset_monthly(self):
-        self._last_month_day = self._day_total_kwh
-        self._last_month_night = self._night_total_kwh
-        self._last_month_total = self._day_total_kwh + self._night_total_kwh
-        self._last_month_date = dt_util.now().date()
-        await self._save_state()
-        await self._notify_listeners()
-        _LOGGER.info("Произведен сброс месячных показаний")
-
-    async def _load_state(self):
-        data = await self.storage.async_load()
-        if data:
-            self._day_partial = data.get("day_partial", 0)
-            self._night_partial = data.get("night_partial", 0)
-            self._day_total_kwh = data.get("day_total_kwh", self._day_total_kwh)
-            self._night_total_kwh = data.get("night_total_kwh", self._night_total_kwh)
-            _LOGGER.debug(f"Загружено состояние: день={self._day_total_kwh}, ночь={self._night_total_kwh}")
-
-    async def _save_state(self):
-        data = {
-            "day_partial": self._day_partial,
-            "night_partial": self._night_partial,
-            "day_total_kwh": self._day_total_kwh,
-            "night_total_kwh": self._night_total_kwh,
-            "last_update": dt_util.utcnow().isoformat(),
-        }
-        await self.storage.async_save(data)
-
-    async def _subscribe_mqtt(self):
-        if not await mqtt.async_wait_for_mqtt_client(self.hass):
-            _LOGGER.error("MQTT клиент не готов")
-            return
-
-        await mqtt.async_subscribe(self.hass, self.topic_day, self._message_received_day, 2)
-        await mqtt.async_subscribe(self.hass, self.topic_night, self._message_received_night, 2)
-        await mqtt.async_subscribe(self.hass, self.topic_available, self._message_received_available, 2)
-
-    @callback
-    def _message_received_day(self, msg):
+    def _on_message(self, client, userdata, msg):
         if self._is_shutdown:
             return
-        try:
-            impulses = int(msg.payload)
-            self.hass.async_create_task(self._process_impulses(impulses, "day"))
-        except ValueError:
-            _LOGGER.error(f"Ошибка преобразования: {msg.payload}")
-
-    @callback
-    def _message_received_night(self, msg):
-        if self._is_shutdown:
-            return
-        try:
-            impulses = int(msg.payload)
-            self.hass.async_create_task(self._process_impulses(impulses, "night"))
-        except ValueError:
-            _LOGGER.error(f"Ошибка преобразования: {msg.payload}")
-
-    @callback
-    def _message_received_available(self, msg):
-        status = msg.payload.decode() if isinstance(msg.payload, bytes) else msg.payload
-        self.esp_available = (status == "Включен")
+        
+        topic = msg.topic
+        payload = msg.payload.decode() if isinstance(msg.payload, bytes) else msg.payload
+        
+        if topic == self.topic_day:
+            try:
+                impulses = int(payload)
+                self._last_day_impulses_raw = impulses
+                self.hass.loop.create_task(self._process_impulses(impulses, "day"))
+            except ValueError:
+                _LOGGER.error("Ошибка преобразования: %s", payload)
+        elif topic == self.topic_night:
+            try:
+                impulses = int(payload)
+                self._last_night_impulses_raw = impulses
+                self.hass.loop.create_task(self._process_impulses(impulses, "night"))
+            except ValueError:
+                _LOGGER.error("Ошибка преобразования: %s", payload)
+        elif topic == self.topic_available:
+            self.esp_available = (payload == "Включен")
+            _LOGGER.info("ESP статус для счетчика %s: %s", self.name, "доступна" if self.esp_available else "недоступна")
 
     async def _process_impulses(self, impulses: int, tariff: str):
         if tariff == "day":
@@ -191,44 +182,73 @@ class PulseCounterMQTTHandler:
                 self._night_partial = total % self.pulses_per_kwh
             else:
                 self._night_partial = total
-
-        await self._save_state()
+        
         await self._notify_listeners()
 
     async def _update_current_tariff(self):
         now = dt_util.now().time()
         night_start = datetime.strptime(self.night_start, "%H:%M").time()
         night_end = datetime.strptime(self.night_end, "%H:%M").time()
-
+        
         if night_start <= night_end:
             is_night = night_start <= now < night_end
         else:
             is_night = now >= night_start or now < night_end
-
+        
         new_tariff = STATE_NIGHT if is_night else STATE_DAY
         
         if new_tariff != self.current_tariff:
             self.current_tariff = new_tariff
-            await self._send_tariff_command()
+            await self._send_command(self.current_tariff)
 
-    async def _send_tariff_command(self):
+    async def _send_command(self, command: str):
         if not self.esp_available:
             return
-        await mqtt.async_publish(self.hass, self.topic_command, self.current_tariff, 2, False)
-        _LOGGER.debug(f"Отправлена команда: {self.current_tariff}")
+        if self._client:
+            self._client.publish(self.topic_command, command)
+            _LOGGER.debug("Отправлена команда: %s", command)
 
     def _schedule_tariff_switching(self):
         async def _check_tariff(now):
             await self._update_current_tariff()
         async_track_time_change(self.hass, _check_tariff, minute=range(0, 60), second=0)
 
+    def _schedule_monthly_reset_check(self):
+        async def _check_reset(now):
+            await self._check_month_reset()
+        async_track_time_change(self.hass, _check_reset, hour=0, minute=1, second=0)
+
     def _schedule_legacy_updates(self):
         async def _send_legacy(now):
-            if self.legacy_mqtt:
-                await mqtt.async_publish(self.hass, self.legacy_topic_day, str(self._day_total_kwh), 1, True)
-                await mqtt.async_publish(self.hass, self.legacy_topic_night, str(self._night_total_kwh), 1, True)
+            if self.legacy_mqtt and self._client:
+                self._client.publish(self.legacy_topic_day, str(self._day_total_kwh))
+                self._client.publish(self.legacy_topic_night, str(self._night_total_kwh))
         async_track_time_change(self.hass, _send_legacy, minute=range(0, 60), second=0)
 
+    async def _check_month_reset(self):
+        today = dt_util.now().date()
+        
+        if self._last_reset_date is None:
+            self._month_start_day = self._day_total_kwh
+            self._month_start_night = self._night_total_kwh
+            self._last_reset_date = today
+            return
+        
+        if today.month != self._last_reset_date.month or today.year != self._last_reset_date.year:
+            self._last_month_day = self._month_start_day
+            self._last_month_night = self._month_start_night
+            self._last_month_total = self._month_start_day + self._month_start_night
+            self._last_month_date = self._last_reset_date
+            
+            self._month_start_day = self._day_total_kwh
+            self._month_start_night = self._night_total_kwh
+            self._last_reset_date = today
+            
+            await self._notify_listeners()
+            _LOGGER.info("Выполнен сброс месячных показаний для счетчика %s", self.name)
+
+    # ========== Свойства для сенсоров ==========
+    
     @property
     def day_kwh(self) -> float:
         return self._day_total_kwh
@@ -238,25 +258,51 @@ class PulseCounterMQTTHandler:
         return self._night_total_kwh
 
     @property
-    def day_partial_impulses(self) -> int:
-        return self._day_partial
-
-    @property
-    def night_partial_impulses(self) -> int:
-        return self._night_partial
-
-    @property
-    def day_cost(self) -> float:
-        return round(self._day_total_kwh * self.day_tariff, 2)
-
-    @property
-    def night_cost(self) -> float:
-        return round(self._night_total_kwh * self.night_tariff, 2)
-
-    @property
-    def total_cost(self) -> float:
-        return round(self.day_cost + self.night_cost, 2)
-
-    @property
     def total_kwh(self) -> float:
         return self._day_total_kwh + self._night_total_kwh
+
+    @property
+    def month_day_kwh(self) -> float:
+        consumption = self._day_total_kwh - self._month_start_day
+        return round(consumption, 2) if consumption > 0 else 0
+
+    @property
+    def month_night_kwh(self) -> float:
+        consumption = self._night_total_kwh - self._month_start_night
+        return round(consumption, 2) if consumption > 0 else 0
+
+    @property
+    def month_total_kwh(self) -> float:
+        return round(self.month_day_kwh + self.month_night_kwh, 2)
+
+    @property
+    def month_day_cost(self) -> float:
+        return round(self.month_day_kwh * self.day_tariff, 2)
+
+    @property
+    def month_night_cost(self) -> float:
+        return round(self.month_night_kwh * self.night_tariff, 2)
+
+    @property
+    def month_total_cost(self) -> float:
+        return round(self.month_day_cost + self.month_night_cost, 2)
+
+    @property
+    def last_month_day_kwh(self) -> float:
+        return self._last_month_day
+
+    @property
+    def last_month_night_kwh(self) -> float:
+        return self._last_month_night
+
+    @property
+    def last_month_total_kwh(self) -> float:
+        return self._last_month_total
+
+    @property
+    def current_raw_impulses(self) -> int:
+        """Сырое значение импульсов за минуту (без обработки)."""
+        if self.current_tariff == STATE_DAY:
+            return self._last_day_impulses_raw
+        else:
+            return self._last_night_impulses_raw
