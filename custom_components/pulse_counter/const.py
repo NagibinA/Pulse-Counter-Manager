@@ -1,7 +1,7 @@
 """Константы для интеграции Pulse Counter Manager."""
 
 DOMAIN = "pulse_counter"
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 # Конфигурационные ключи
 CONF_NAME = "name"
