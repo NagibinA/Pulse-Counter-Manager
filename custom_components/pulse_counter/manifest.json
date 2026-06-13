@@ -1,0 +1,12 @@
+{
+  "domain": "pulse_counter",
+  "name": "Pulse Counter Manager",
+  "version": "1.0.0",
+  "requirements": [],
+  "dependencies": ["mqtt"],
+  "codeowners": ["@NagibinA"],
+  "config_flow": true,
+  "iot_class": "local_polling",
+  "documentation": "https://github.com/NagibinA/Pulse-Counter-Manager",
+  "issue_tracker": "https://github.com/NagibinA/Pulse-Counter-Manager/issues"
+}
