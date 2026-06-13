@@ -1,14 +1,21 @@
 """Инициализация интеграции Pulse Counter Manager."""
 
 import logging
-import voluptuous as vol
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.helpers import service
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from .const import DOMAIN, CONF_DEVICES
+from .const import (
+    DOMAIN,
+    CONF_COUNTERS,
+    CONF_MQTT_BROKER,
+    CONF_MQTT_PORT,
+    CONF_MQTT_USERNAME,
+    CONF_MQTT_PASSWORD,
+    CONF_COUNTER_ID,
+)
 from .mqtt_handler import PulseCounterMQTTHandler
 
 PLATFORMS = [Platform.SENSOR]
@@ -21,69 +28,65 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     if DOMAIN not in hass.data:
         hass.data[DOMAIN] = {}
-        hass.data[DOMAIN][CONF_DEVICES] = {}
+        hass.data[DOMAIN][CONF_COUNTERS] = {}
+        hass.data[DOMAIN]["handlers"] = {}
 
-    # Создаем обработчик MQTT для этого устройства
-    mqtt_handler = PulseCounterMQTTHandler(hass, entry)
-    await mqtt_handler.async_initialize()
+    broker = entry.data[CONF_MQTT_BROKER]
+    port = entry.data[CONF_MQTT_PORT]
+    username = entry.data.get(CONF_MQTT_USERNAME, "")
+    password = entry.data.get(CONF_MQTT_PASSWORD, "")
     
-    hass.data[DOMAIN][CONF_DEVICES][entry.entry_id] = mqtt_handler
-
-    # Регистрация сервисов
-    async def handle_set_day_kwh(call):
-        value = call.data.get("value")
-        await mqtt_handler.async_set_day_kwh(value)
-
-    async def handle_set_night_kwh(call):
-        value = call.data.get("value")
-        await mqtt_handler.async_set_night_kwh(value)
-
-    async def handle_reset_monthly(call):
-        await mqtt_handler.async_reset_monthly()
-
-    service.async_register_admin_service(
-        hass,
-        DOMAIN,
-        "set_day_kwh",
-        handle_set_day_kwh,
-        schema=vol.Schema({vol.Required("value"): vol.Coerce(float)}),
-    )
-
-    service.async_register_admin_service(
-        hass,
-        DOMAIN,
-        "set_night_kwh",
-        handle_set_night_kwh,
-        schema=vol.Schema({vol.Required("value"): vol.Coerce(float)}),
-    )
-
-    service.async_register_admin_service(
-        hass,
-        DOMAIN,
-        "reset_monthly",
-        handle_reset_monthly,
-        schema=vol.Schema({}),
-    )
-
-    # Регистрируем платформы
+    counters = entry.data.get(CONF_COUNTERS, {})
+    
+    for counter_name, counter_config in counters.items():
+        handler = PulseCounterMQTTHandler(
+            hass,
+            broker=broker,
+            port=port,
+            username=username,
+            password=password,
+            config=counter_config,
+        )
+        await handler.async_initialize()
+        hass.data[DOMAIN]["handlers"][counter_config[CONF_COUNTER_ID]] = handler
+    
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
+    
     entry.async_on_unload(entry.add_update_listener(update_listener))
-
+    
+    async def async_add_counter(counter_config):
+        handler = PulseCounterMQTTHandler(
+            hass,
+            broker=broker,
+            port=port,
+            username=username,
+            password=password,
+            config=counter_config,
+        )
+        await handler.async_initialize()
+        hass.data[DOMAIN]["handlers"][counter_config[CONF_COUNTER_ID]] = handler
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    
+    entry.async_on_unload(
+        async_dispatcher_connect(hass, f"{DOMAIN}_add_counter", async_add_counter)
+    )
+    
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Выгрузка интеграции."""
     
-    mqtt_handler = hass.data[DOMAIN][CONF_DEVICES].pop(entry.entry_id)
-    await mqtt_handler.async_shutdown()
-
+    for handler_id, handler in hass.data[DOMAIN]["handlers"].items():
+        await handler.async_shutdown()
+    
+    hass.data[DOMAIN]["handlers"].clear()
+    
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-
-    if not hass.data[DOMAIN][CONF_DEVICES]:
+    
+    if unload_ok:
         hass.data.pop(DOMAIN)
-
+    
     return unload_ok
 
 
