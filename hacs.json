@@ -1,0 +1,9 @@
+{
+  "name": "Pulse Counter Manager",
+  "render_readme": true,
+  "domains": ["sensor"],
+  "country": ["RU"],
+  "homeassistant": "2024.1.0",
+  "iot_class": "Local Polling",
+  "zip_release": false
+}
