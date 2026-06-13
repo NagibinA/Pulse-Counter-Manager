@@ -1,0 +1,46 @@
+{
+  "title": "Pulse Counter Manager",
+  "config": {
+    "step": {
+      "user": {
+        "title": "MQTT настройки",
+        "description": "Настройте MQTT топики для связи с ESP",
+        "data": {
+          "name": "Имя устройства",
+          "mqtt_topic_day": "MQTT топик день",
+          "mqtt_topic_night": "MQTT топик ночь",
+          "mqtt_topic_command": "MQTT топик команд",
+          "mqtt_topic_available": "MQTT топик статуса"
+        }
+      },
+      "tariff": {
+        "title": "Тарифы",
+        "description": "Настройте стоимость электроэнергии",
+        "data": {
+          "day_tariff": "Дневной тариф (руб/кВт·ч)",
+          "night_tariff": "Ночной тариф (руб/кВт·ч)",
+          "night_start": "Начало ночного тарифа",
+          "night_end": "Конец ночного тарифа",
+          "pulses_per_kwh": "Импульсов на кВт·ч"
+        }
+      },
+      "initial_values": {
+        "title": "Начальные показания",
+        "description": "Введите текущие показания счетчика",
+        "data": {
+          "initial_day_kwh": "Дневной счетчик (кВт·ч)",
+          "initial_night_kwh": "Ночной счетчик (кВт·ч)"
+        }
+      },
+      "legacy": {
+        "title": "Совместимость",
+        "description": "Отправлять данные в другие MQTT топики",
+        "data": {
+          "legacy_mqtt": "Включить отправку",
+          "legacy_topic_day": "Топик для дневных показаний",
+          "legacy_topic_night": "Топик для ночных показаний"
+        }
+      }
+    }
+  }
+}
