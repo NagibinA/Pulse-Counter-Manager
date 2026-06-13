@@ -106,7 +106,7 @@ class PulseCounterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             
             if connected:
                 broker = user_input[CONF_MQTT_BROKER]
-                title = f"Pulse Counter Manager v{VERSION}"
+                title = f"Pulse Counter ({broker})"
                 
                 return self.async_create_entry(
                     title=title,
