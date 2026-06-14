@@ -853,8 +853,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             
             description = {
                 "name": counter[CONF_NAME],
-                "info": "Измените тарифы на электроэнергию.\n"
-                       f"Актуальные тарифы можно посмотреть [по ссылке]({TARIFF_INFO_URL}).",
+                "info": "Измените тарифы на электроэнергию.",
+                "tariff_info_url": TARIFF_INFO_URL,  # ← КЛЮЧЕВОЕ ДОБАВЛЕНИЕ
             }
         else:
             schema = vol.Schema({
@@ -864,6 +864,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             description = {
                 "name": counter[CONF_NAME],
                 "info": f"Измените тариф на {counter[CONF_UNIT]}.",
+                "tariff_info_url": TARIFF_INFO_URL,  # ← КЛЮЧЕВОЕ ДОБАВЛЕНИЕ
             }
         
         return self.async_show_form(
