@@ -1,10 +1,14 @@
 """Константы для интеграции Pulse Counter Manager."""
 
 DOMAIN = "pulse_counter"
-VERSION = "1.2.3"
+VERSION = "1.3.0"
 
 # Ссылка на официальные тарифы
 TARIFF_INFO_URL = "https://www.elec.ru/library/rd/tarify-elektroenergiya-2026/st-peterburg.html"
+
+# Режимы брокера для экспорта
+EXPORT_BROKER_MAIN = "main"
+EXPORT_BROKER_CUSTOM = "custom"
 
 # Типы счетчиков
 METER_TYPE_ELECTRICITY = "electricity"
@@ -101,10 +105,14 @@ CONF_NIGHT_START = "night_start"
 CONF_NIGHT_END = "night_end"
 CONF_PULSES_PER_UNIT = "pulses_per_unit"
 CONF_UNIT = "unit"
-CONF_LEGACY_MQTT = "legacy_mqtt"
-CONF_LEGACY_TOPIC = "legacy_topic"
-CONF_LEGACY_TOPIC_DAY = "legacy_topic_day"
-CONF_LEGACY_TOPIC_NIGHT = "legacy_topic_night"
+CONF_EXPORT_ENABLED = "export_enabled"
+CONF_EXPORT_BROKER_MODE = "export_broker_mode"
+CONF_EXPORT_BROKER = "export_broker"
+CONF_EXPORT_PORT = "export_port"
+CONF_EXPORT_USERNAME = "export_username"
+CONF_EXPORT_PASSWORD = "export_password"
+CONF_EXPORT_TOPIC_DAY = "export_topic_day"
+CONF_EXPORT_TOPIC_NIGHT = "export_topic_night"
 CONF_INITIAL_VALUE = "initial_value"
 CONF_INITIAL_DAY_KWH = "initial_day_kwh"
 CONF_INITIAL_NIGHT_KWH = "initial_night_kwh"
@@ -128,9 +136,11 @@ DEFAULT_MQTT_TOPIC_NIGHT = "Counter/night"
 DEFAULT_MQTT_TOPIC_MAIN = "meter"
 DEFAULT_MQTT_TOPIC_COMMAND = "Counter/choice"
 DEFAULT_MQTT_TOPIC_AVAILABLE = "Counter/Available"
-DEFAULT_LEGACY_TOPIC = "HomeAssistant/meter"
-DEFAULT_LEGACY_TOPIC_DAY = "HomeAssistant/daily"
-DEFAULT_LEGACY_TOPIC_NIGHT = "HomeAssistant/nighttime"
+DEFAULT_EXPORT_TOPIC_DAY = "export/day"
+DEFAULT_EXPORT_TOPIC_NIGHT = "export/night"
+DEFAULT_EXPORT_BROKER = ""
+DEFAULT_EXPORT_PORT = 1883
+DEFAULT_EXPORT_BROKER_MODE = EXPORT_BROKER_MAIN
 
 # События и состояния
 EVENT_IMPULSE_RECEIVED = f"{DOMAIN}_impulse_received"
