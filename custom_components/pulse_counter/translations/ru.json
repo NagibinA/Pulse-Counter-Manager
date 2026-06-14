@@ -11,7 +11,8 @@
       "invalid_time_format": "Неверный формат времени. Используйте ЧЧ:ММ (например, 23:00)",
       "tariff_negative": "Тариф не может быть отрицательным",
       "pulses_positive": "Количество импульсов должно быть больше 0",
-      "invalid_port": "Порт должен быть в диапазоне 1-65535"
+      "invalid_port": "Порт должен быть в диапазоне 1-65535",
+      "invalid_day": "День месяца должен быть в диапазоне 1-31"
     },
     "step": {
       "user": {
@@ -44,7 +45,7 @@
       },
       "add_counter": {
         "title": "Добавление счетчика",
-        "description": "Настройте параметры счетчика",
+        "description": "{section1_title}\n\n{section2_title}\n\n{section3_title}\n\n{section4_title}\n\n{section5_title}\n\n{section6_title}\n\n{section7_title}",
         "data": {
           "name": "Название счетчика",
           "topic_day": "MQTT топик (день)",
@@ -71,7 +72,17 @@
           "export_username": "Имя пользователя",
           "export_password": "Пароль",
           "export_topic_day": "Топик для дневных показаний",
-          "export_topic_night": "Топик для ночных показаний"
+          "export_topic_night": "Топик для ночных показаний",
+          "notification_enabled": "Включить уведомления",
+          "notification_day": "День месяца",
+          "notification_time": "Время отправки",
+          "notification_service": "Сервис уведомлений",
+          "notification_show_day": "Показывать дневные показания",
+          "notification_show_night": "Показывать ночные показания",
+          "notification_show_total": "Показывать общие показания",
+          "notification_show_cost": "Показывать стоимость",
+          "notification_show_month": "Показывать потребление за месяц",
+          "notification_custom_message": "Дополнительный текст"
         }
       },
       "edit_counter": {
@@ -83,14 +94,14 @@
       },
       "edit_choice": {
         "title": "Действие",
-        "description": "Выберите действие со счетчиком",
+        "description": "{info}",
         "data": {
           "action": "Действие"
         }
       },
       "edit_current": {
         "title": "Текущие показания",
-        "description": "Введите текущие показания счетчика",
+        "description": "{info}",
         "data": {
           "day_kwh": "Дневные показания (кВт·ч)",
           "night_kwh": "Ночные показания (кВт·ч)",
@@ -99,7 +110,7 @@
       },
       "edit_month_start": {
         "title": "Начало месяца",
-        "description": "Введите показания на начало текущего месяца",
+        "description": "{info}",
         "data": {
           "month_start_day": "Дневные показания на начало месяца (кВт·ч)",
           "month_start_night": "Ночные показания на начало месяца (кВт·ч)",
@@ -108,7 +119,7 @@
       },
       "edit_accumulated": {
         "title": "Накопленные импульсы",
-        "description": "Измените количество накопленных импульсов",
+        "description": "{info}",
         "data": {
           "day_impulses": "Дневные накопленные импульсы",
           "night_impulses": "Ночные накопленные импульсы",
@@ -117,7 +128,7 @@
       },
       "edit_tariffs": {
         "title": "Тарифы",
-        "description": "Измените тарифы. Актуальные тарифы можно посмотреть [по ссылке]({tariff_info_url}).",
+        "description": "{info}",
         "data": {
           "day_tariff": "Дневной тариф (руб/кВт·ч)",
           "night_tariff": "Ночной тариф (руб/кВт·ч)",
@@ -128,7 +139,7 @@
       },
       "edit_pulses": {
         "title": "Коэффициент импульсов",
-        "description": "Укажите количество импульсов на единицу измерения",
+        "description": "{info}",
         "data": {
           "pulses_per_unit": "Импульсов на единицу"
         }
@@ -163,6 +174,22 @@
           "topic_main": "MQTT топик",
           "topic_command": "Топик команд",
           "topic_available": "Топик статуса"
+        }
+      },
+      "edit_notifications": {
+        "title": "Настройка уведомлений",
+        "description": "{info}",
+        "data": {
+          "notification_enabled": "Включить ежемесячные уведомления",
+          "notification_day": "День месяца",
+          "notification_time": "Время отправки",
+          "notification_service": "Сервис уведомлений",
+          "notification_show_day": "Дневные показания",
+          "notification_show_night": "Ночные показания",
+          "notification_show_total": "Общие показания",
+          "notification_show_month": "Потребление за месяц",
+          "notification_show_cost": "Стоимость",
+          "notification_custom_message": "Дополнительный текст"
         }
       }
     }
