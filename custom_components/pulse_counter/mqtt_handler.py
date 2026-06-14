@@ -13,6 +13,8 @@ from .const import (
     STATE_DAY,
     STATE_NIGHT,
     METER_TYPE_ELECTRICITY,
+    EXPORT_BROKER_MAIN,
+    EXPORT_BROKER_CUSTOM,
     CONF_NAME,
     CONF_COUNTER_ID,
     CONF_METER_TYPE,
@@ -28,16 +30,21 @@ from .const import (
     CONF_NIGHT_START,
     CONF_NIGHT_END,
     CONF_PULSES_PER_UNIT,
-    CONF_LEGACY_MQTT,
-    CONF_LEGACY_TOPIC,
-    CONF_LEGACY_TOPIC_DAY,
-    CONF_LEGACY_TOPIC_NIGHT,
+    CONF_EXPORT_ENABLED,
+    CONF_EXPORT_BROKER_MODE,
+    CONF_EXPORT_BROKER,
+    CONF_EXPORT_PORT,
+    CONF_EXPORT_USERNAME,
+    CONF_EXPORT_PASSWORD,
+    CONF_EXPORT_TOPIC_DAY,
+    CONF_EXPORT_TOPIC_NIGHT,
     CONF_INITIAL_VALUE,
     CONF_INITIAL_DAY_KWH,
     CONF_INITIAL_NIGHT_KWH,
     CONF_MONTH_START_VALUE,
     CONF_MONTH_START_DAY,
     CONF_MONTH_START_NIGHT,
+    DEFAULT_EXPORT_PORT,
 )
 
 from .storage import PulseCounterStorage
@@ -64,7 +71,14 @@ class BaseMQTTHandler:
         
         self.topic_available = config.get(CONF_MQTT_TOPIC_AVAILABLE, "")
         
-        self.legacy_mqtt = config.get(CONF_LEGACY_MQTT, False)
+        self.export_enabled = config.get(CONF_EXPORT_ENABLED, False)
+        self.export_broker_mode = config.get(CONF_EXPORT_BROKER_MODE, EXPORT_BROKER_MAIN)
+        self.export_broker = config.get(CONF_EXPORT_BROKER, None)
+        self.export_port = config.get(CONF_EXPORT_PORT, DEFAULT_EXPORT_PORT)
+        self.export_username = config.get(CONF_EXPORT_USERNAME, "")
+        self.export_password = config.get(CONF_EXPORT_PASSWORD, "")
+        self.export_topic_day = config.get(CONF_EXPORT_TOPIC_DAY, "export/day")
+        self.export_topic_night = config.get(CONF_EXPORT_TOPIC_NIGHT, "export/night")
         
         # Состояние счетчика
         self._partial = 0
@@ -90,6 +104,7 @@ class BaseMQTTHandler:
         
         # MQTT клиент
         self._client = None
+        self._export_client = None
         self._is_shutdown = False
         self._listeners = []
         
@@ -162,8 +177,9 @@ class BaseMQTTHandler:
         
         # Запускаем фоновые задачи
         self._schedule_impulses_update()
-        if self.legacy_mqtt:
-            self._schedule_legacy_updates()
+        if self.export_enabled:
+            await self._connect_export_mqtt()
+            self._schedule_export_updates()
         
         _LOGGER.info("Обработчик счетчика %s запущен", self.name)
 
@@ -175,6 +191,9 @@ class BaseMQTTHandler:
         if self._client:
             self._client.loop_stop()
             self._client.disconnect()
+        if self._export_client and self._export_client != self._client:
+            self._export_client.loop_stop()
+            self._export_client.disconnect()
         await self.storage.async_close()
         _LOGGER.info("Обработчик счетчика %s остановлен", self.name)
 
@@ -208,6 +227,33 @@ class BaseMQTTHandler:
             await asyncio.sleep(0.5)
             if self._client.is_connected():
                 break
+
+    async def _connect_export_mqtt(self):
+        """Подключение к MQTT брокеру для экспорта показаний."""
+        if not self.export_enabled:
+            return
+        
+        if self.export_broker_mode == EXPORT_BROKER_MAIN:
+            # Используем основной клиент
+            self._export_client = self._client
+            _LOGGER.debug("Экспорт показаний использует основной брокер для %s", self.name)
+            return
+        
+        if not self.export_broker:
+            _LOGGER.warning("Брокер для экспорта не указан для %s, экспорт отключен", self.name)
+            return
+        
+        try:
+            self._export_client = mqtt.Client()
+            if self.export_username and self.export_password:
+                self._export_client.username_pw_set(self.export_username, self.export_password)
+            self._export_client.connect(self.export_broker, self.export_port, 60)
+            self._export_client.loop_start()
+            _LOGGER.info("Подключен к брокеру для экспорта %s:%s для счетчика %s", 
+                        self.export_broker, self.export_port, self.name)
+        except Exception as e:
+            _LOGGER.error("Ошибка подключения к брокеру для экспорта для %s: %s", self.name, e)
+            self._export_client = None
 
     def _on_connect(self, client, userdata, flags, rc):
         if rc == 0:
@@ -273,15 +319,23 @@ class BaseMQTTHandler:
             await self._update_impulses_per_minute()
         async_track_time_change(self.hass, _update, second=5)
 
-    def _schedule_legacy_updates(self):
-        async def _send_legacy(now):
-            if self.legacy_mqtt and self._client and self._polling_enabled:
-                await self._send_legacy_value()
-        async_track_time_change(self.hass, _send_legacy, minute=range(0, 60), second=0)
+    async def _send_export_value(self):
+        """Отправка показаний в топики экспорта."""
+        if not self.export_enabled or not self._export_client:
+            return
+        try:
+            self._export_client.publish(self.export_topic_day, str(self._total_value))
+            self._export_client.publish(self.export_topic_night, str(self._night_total_kwh if hasattr(self, '_night_total_kwh') else 0))
+            _LOGGER.debug("Отправлены экспортные показания для %s", self.name)
+        except Exception as e:
+            _LOGGER.error("Ошибка отправки экспортных показаний для %s: %s", self.name, e)
 
-    async def _send_legacy_value(self):
-        """Отправка legacy значения - переопределяется в дочерних классах."""
-        pass
+    def _schedule_export_updates(self):
+        """Запланировать отправку экспортных показаний."""
+        async def _send_export(now):
+            await self._send_export_value()
+        async_track_time_change(self.hass, _send_export, minute=range(0, 60), second=0)
+        _LOGGER.debug("Запланирована отправка экспортных показаний для %s", self.name)
 
     # Методы для корректировки
     async def async_set_total_value(self, value: float):
@@ -330,7 +384,6 @@ class PulseCounterWaterMQTTHandler(BaseMQTTHandler):
         
         self.topic_main = config.get(CONF_MQTT_TOPIC_MAIN, "")
         self.tariff = config.get(CONF_TARIFF, 0)
-        self.legacy_topic = config.get(CONF_LEGACY_TOPIC, "HomeAssistant/meter")
         
         _LOGGER.info("Топик для %s: %s", self.name, self.topic_main)
 
@@ -357,10 +410,6 @@ class PulseCounterWaterMQTTHandler(BaseMQTTHandler):
                     self._pending_impulses += impulses
             except ValueError:
                 _LOGGER.error("Ошибка преобразования: %s", payload)
-
-    async def _send_legacy_value(self):
-        if self._client:
-            self._client.publish(self.legacy_topic, str(self._total_value))
 
     @property
     def month_cost(self) -> float:
@@ -406,13 +455,10 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
         # Текущий тариф
         self.current_tariff = STATE_DAY
         
-        # Legacy топики
-        self.legacy_topic_day = config.get(CONF_LEGACY_TOPIC_DAY, "HomeAssistant/daily")
-        self.legacy_topic_night = config.get(CONF_LEGACY_TOPIC_NIGHT, "HomeAssistant/nighttime")
-        
-        # Для накопления во время перезагрузки
-        self._pending_day_impulses = 0
-        self._pending_night_impulses = 0
+        # Для экспорта - переопределяем топики
+        if self.export_enabled:
+            self.export_topic_day = config.get(CONF_EXPORT_TOPIC_DAY, "export/day")
+            self.export_topic_night = config.get(CONF_EXPORT_TOPIC_NIGHT, "export/night")
         
         _LOGGER.info("Топики дня/ночи для %s: %s, %s", self.name, self.topic_day, self.topic_night)
 
@@ -569,10 +615,17 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
             await self._update_current_tariff()
         async_track_time_change(self.hass, _check_tariff, second=0)
 
-    async def _send_legacy_value(self):
-        if self._client:
-            self._client.publish(self.legacy_topic_day, str(self._day_total_kwh))
-            self._client.publish(self.legacy_topic_night, str(self._night_total_kwh))
+    async def _send_export_value(self):
+        """Отправка показаний в топики экспорта (переопределение)."""
+        if not self.export_enabled or not self._export_client:
+            return
+        try:
+            self._export_client.publish(self.export_topic_day, str(self._day_total_kwh))
+            self._export_client.publish(self.export_topic_night, str(self._night_total_kwh))
+            _LOGGER.debug("Отправлены экспортные показания для %s: день=%.1f, ночь=%.1f", 
+                         self.name, self._day_total_kwh, self._night_total_kwh)
+        except Exception as e:
+            _LOGGER.error("Ошибка отправки экспортных показаний для %s: %s", self.name, e)
 
     # Методы для корректировки
     async def async_set_day_kwh(self, value: float):
