@@ -8,6 +8,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.components import persistent_notification
 
 from .const import (
     DOMAIN,
@@ -269,7 +270,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 if user_input.get(CONF_EXPORT_PORT, 1883) < 1 or user_input.get(CONF_EXPORT_PORT, 1883) > 65535:
                     errors[CONF_EXPORT_PORT] = "invalid_port"
                 
-                # Валидация дня месяца для уведомлений
                 if user_input.get(CONF_NOTIFICATION_ENABLED, False):
                     notification_day = user_input.get(CONF_NOTIFICATION_DAY, DEFAULT_NOTIFICATION_DAY)
                     if notification_day < 1 or notification_day > 31:
@@ -296,7 +296,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             CONF_EXPORT_PORT: user_input.get(CONF_EXPORT_PORT, DEFAULT_EXPORT_PORT),
                             CONF_EXPORT_USERNAME: user_input.get(CONF_EXPORT_USERNAME, ""),
                             CONF_EXPORT_PASSWORD: user_input.get(CONF_EXPORT_PASSWORD, ""),
-                            # Настройки уведомлений
                             CONF_NOTIFICATION_ENABLED: user_input.get(CONF_NOTIFICATION_ENABLED, False),
                             CONF_NOTIFICATION_DAY: user_input.get(CONF_NOTIFICATION_DAY, DEFAULT_NOTIFICATION_DAY),
                             CONF_NOTIFICATION_TIME: user_input.get(CONF_NOTIFICATION_TIME, DEFAULT_NOTIFICATION_TIME),
@@ -699,7 +698,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             "edit_threshold": "🔧 Настроить порог ESP",
             "edit_export": "📤 Настроить экспорт показаний",
             "edit_topics": "📡 Изменить MQTT топики",
-            "edit_notifications": "📬 Настроить уведомления",  # НОВЫЙ ПУНКТ
+            "edit_notifications": "📬 Настроить уведомления",
         }
         
         if user_input is not None:
@@ -738,6 +737,79 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         """Получить handler по counter_id."""
         handlers = self.hass.data[DOMAIN]["handlers"]
         return handlers.get(self._selected_counter_id)
+    
+    async def _send_test_notification(self, handler):
+        """Отправить тестовое уведомление с текущими настройками."""
+        # Формируем сообщение по текущим настройкам handler
+        message_lines = [f"🏠 **{handler.name}**", ""]
+        
+        if handler.meter_type == METER_TYPE_ELECTRICITY:
+            if handler.notification_show_day:
+                message_lines.append(f"☀️ День: **{handler.day_kwh:.1f}** kWh")
+            if handler.notification_show_night:
+                message_lines.append(f"🌙 Ночь: **{handler.night_kwh:.1f}** kWh")
+            if handler.notification_show_total:
+                message_lines.append(f"📈 Всего: **{handler.total_value:.1f}** kWh")
+            if handler.notification_show_month:
+                message_lines.append(f"📅 За месяц: **{handler.month_value:.1f}** kWh")
+            if handler.notification_show_cost:
+                message_lines.append(f"💰 Стоимость за месяц: **{handler.month_total_cost:.2f}** руб")
+        else:
+            if handler.notification_show_total:
+                message_lines.append(f"📈 Всего: **{handler.total_value:.1f}** {handler.unit}")
+            if handler.notification_show_month:
+                message_lines.append(f"📅 За месяц: **{handler.month_value:.1f}** {handler.unit}")
+            if handler.notification_show_cost:
+                message_lines.append(f"💰 Стоимость за месяц: **{handler.month_cost:.2f}** руб")
+        
+        if handler.notification_custom_message:
+            message_lines.append("")
+            message_lines.append(f"💬 {handler.notification_custom_message}")
+        
+        message = "\n".join(message_lines)
+        
+        # Отправляем уведомление
+        service = handler.notification_service
+        
+        if service == "persistent_notification":
+            persistent_notification.async_create(
+                handler.hass,
+                message,
+                title=f"📊 {handler.name} - тестовое уведомление",
+                notification_id=f"pulse_counter_test_{handler.counter_id}"
+            )
+        elif service.startswith("notify."):
+            service_name = service.split(".")[-1]
+            await handler.hass.services.async_call(
+                "notify",
+                service_name,
+                {
+                    "title": f"📊 {handler.name}",
+                    "message": message
+                },
+                blocking=False
+            )
+        else:
+            # Пробуем как есть
+            await handler.hass.services.async_call(
+                "notify",
+                service,
+                {
+                    "title": f"📊 {handler.name}",
+                    "message": message
+                },
+                blocking=False
+            )
+        
+        # Подтверждение
+        persistent_notification.async_create(
+            handler.hass,
+            f"✅ Тестовое уведомление для **{handler.name}** отправлено в сервис `{service}`.\n\nПроверьте уведомления в соответствующем приложении.",
+            title="📬 Pulse Counter Manager",
+            notification_id="pulse_counter_test_confirm"
+        )
+        
+        _LOGGER.info("Отправлено тестовое уведомление для %s в сервис %s", handler.name, service)
     
     async def async_step_edit_current(self, user_input=None):
         """Изменение текущих показаний."""
@@ -1251,17 +1323,33 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         counter = self._entry.data[CONF_COUNTERS][self._selected_counter_id]
         meter_type = counter.get(CONF_METER_TYPE, METER_TYPE_ELECTRICITY)
         
-        if user_input is not None:
+        # Если пользователь нажал кнопку тестового уведомления
+        if user_input is not None and user_input.get("test_notification"):
+            handler = self._get_handler_by_counter_id()
+            if handler:
+                await self._send_test_notification(handler)
+            # Показываем форму снова, не закрывая
+            return await self.async_step_edit_notifications()
+        
+        # Обычное сохранение настроек
+        if user_input is not None and not user_input.get("test_notification"):
             new_counter = dict(counter)
             new_counter[CONF_NOTIFICATION_ENABLED] = user_input[CONF_NOTIFICATION_ENABLED]
             new_counter[CONF_NOTIFICATION_DAY] = user_input[CONF_NOTIFICATION_DAY]
             new_counter[CONF_NOTIFICATION_TIME] = user_input[CONF_NOTIFICATION_TIME]
             new_counter[CONF_NOTIFICATION_SERVICE] = user_input[CONF_NOTIFICATION_SERVICE]
-            new_counter[CONF_NOTIFICATION_SHOW_DAY] = user_input.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY)
-            new_counter[CONF_NOTIFICATION_SHOW_NIGHT] = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT)
+            
+            # Для электричества сохраняем день/ночь
+            if meter_type == METER_TYPE_ELECTRICITY:
+                new_counter[CONF_NOTIFICATION_SHOW_DAY] = user_input.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY)
+                new_counter[CONF_NOTIFICATION_SHOW_NIGHT] = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT)
+            else:
+                new_counter[CONF_NOTIFICATION_SHOW_DAY] = False
+                new_counter[CONF_NOTIFICATION_SHOW_NIGHT] = False
+            
             new_counter[CONF_NOTIFICATION_SHOW_TOTAL] = user_input.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL)
-            new_counter[CONF_NOTIFICATION_SHOW_COST] = user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST)
             new_counter[CONF_NOTIFICATION_SHOW_MONTH] = user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH)
+            new_counter[CONF_NOTIFICATION_SHOW_COST] = user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST)
             new_counter[CONF_NOTIFICATION_CUSTOM_MESSAGE] = user_input.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "")
             
             counters = dict(self._entry.data[CONF_COUNTERS])
@@ -1272,18 +1360,24 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 data={**self._entry.data, CONF_COUNTERS: counters}
             )
             
-            # Обновляем настройки в handler без перезагрузки всей интеграции
+            # Обновляем настройки в handler
             handler = self._get_handler_by_counter_id()
             if handler:
                 handler.notification_enabled = user_input[CONF_NOTIFICATION_ENABLED]
                 handler.notification_day = user_input[CONF_NOTIFICATION_DAY]
                 handler.notification_time = user_input[CONF_NOTIFICATION_TIME]
                 handler.notification_service = user_input[CONF_NOTIFICATION_SERVICE]
-                handler.notification_show_day = user_input.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY)
-                handler.notification_show_night = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT)
+                
+                if meter_type == METER_TYPE_ELECTRICITY:
+                    handler.notification_show_day = user_input.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY)
+                    handler.notification_show_night = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT)
+                else:
+                    handler.notification_show_day = False
+                    handler.notification_show_night = False
+                
                 handler.notification_show_total = user_input.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL)
-                handler.notification_show_cost = user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST)
                 handler.notification_show_month = user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH)
+                handler.notification_show_cost = user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST)
                 handler.notification_custom_message = user_input.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "")
                 
                 # Сбрасываем флаг уведомления для этого месяца
@@ -1322,6 +1416,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         schema_dict[vol.Optional(CONF_NOTIFICATION_CUSTOM_MESSAGE, 
             default=counter.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, ""))] = str
         
+        # Добавляем кнопку тестового уведомления
+        schema_dict[vol.Optional("test_notification", default=False)] = bool
+        
         schema = vol.Schema(schema_dict)
         
         # Подсказки
@@ -1331,7 +1428,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 f"• **День месяца**: укажите число, когда нужно отправлять уведомление (например, 24)\n"
                 f"• **Время**: формат ЧЧ:ММ:СС (например, 19:00:00)\n"
                 f"• **Сервис**: выберите куда отправлять (в HA, на телефон, в Telegram)\n"
-                f"• **Показания**: отметьте, что включать в уведомление"
+                f"• **Показания**: отметьте, что включать в уведомление\n\n"
+                f"💡 **Совет:** Включите опцию **'Отправить тестовое уведомление'** ниже и нажмите **'Подтвердить'**, "
+                f"чтобы проверить текущие настройки немедленно, не дожидаясь указанного дня месяца."
             )
         else:
             info_text = (
@@ -1339,7 +1438,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 f"• **День месяца**: укажите число, когда нужно отправлять уведомление (например, 24)\n"
                 f"• **Время**: формат ЧЧ:ММ:СС (например, 19:00:00)\n"
                 f"• **Сервис**: выберите куда отправлять (в HA, на телефон, в Telegram)\n"
-                f"• **Показания**: отметьте, что включать в уведомление"
+                f"• **Показания**: отметьте, что включать в уведомление\n\n"
+                f"💡 **Совет:** Включите опцию **'Отправить тестовое уведомление'** ниже и нажмите **'Подтвердить'**, "
+                f"чтобы проверить текущие настройки немедленно, не дожидаясь указанного дня месяца."
             )
         
         return self.async_show_form(
