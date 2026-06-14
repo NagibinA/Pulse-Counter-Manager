@@ -1,8 +1,13 @@
 # ⚡ Pulse Counter Manager
 
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-18BCF2?logo=home-assistant&logoColor=white)](https://www.home-assistant.io/)
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/hacs/integration)
 [![version](https://img.shields.io/badge/version-1.4.0-blue.svg)](https://github.com/NagibinA/Pulse-Counter-Manager)
+[![Arduino](https://img.shields.io/badge/Arduino-00878F?logo=arduino&logoColor=white)](https://www.arduino.cc/)
+[![ESPHome](https://img.shields.io/badge/ESPHome-000000?logo=esphome&logoColor=white)](https://esphome.io/)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+
 
 **Интеграция для управления импульсными счетчиками электроэнергии, воды, газа и тепла в Home Assistant**
 
