@@ -93,7 +93,7 @@ class BaseMQTTHandler:
         self._last_impulses_per_minute = 0
         
         # Для накопления импульсов во время перезагрузки
-        self._pending_impulses = 0
+        self._pending_impulses = 0  # ← ДОБАВЛЕНО
         
         # Управление опросом
         self._polling_enabled = True
@@ -140,6 +140,10 @@ class BaseMQTTHandler:
                          self.name, self._total_value, self._partial)
         else:
             _LOGGER.debug("Нет сохраненного состояния для %s", self.name)
+
+    async def async_save_state(self):
+        """Сохранить состояние в хранилище (публичный метод)."""
+        await self._save_state()
 
     async def _save_state(self):
         """Сохранить состояние в хранилище."""
@@ -197,7 +201,7 @@ class BaseMQTTHandler:
         await self.storage.async_close()
         _LOGGER.info("Обработчик счетчика %s остановлен", self.name)
 
-    def async_stop_polling(self):
+    async def async_stop_polling(self):
         """Остановка опроса ESP (при выключении HA)."""
         self._polling_enabled = False
         _LOGGER.info("Остановлен опрос ESP для %s", self.name)
@@ -205,8 +209,8 @@ class BaseMQTTHandler:
     async def async_start_polling(self):
         """Возобновление опроса ESP (при запуске HA)."""
         self._polling_enabled = True
-        # Отправляем команду сразу после запуска, если это электричество
-        if hasattr(self, '_update_current_tariff'):
+        # Проверяем наличие метода _update_current_tariff (только для электричества)
+        if hasattr(self, '_update_current_tariff') and callable(getattr(self, '_update_current_tariff')):
             await self._update_current_tariff()
         _LOGGER.info("Возобновлен опрос ESP для %s", self.name)
 
@@ -454,6 +458,10 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
         # Текущий тариф
         self.current_tariff = STATE_DAY
         
+        # Для накопления импульсов во время перезагрузки
+        self._pending_day_impulses = 0  # ← ДОБАВЛЕНО
+        self._pending_night_impulses = 0  # ← ДОБАВЛЕНО
+        
         # Для экспорта - переопределяем топики
         if self.export_enabled:
             self.export_topic_day = config.get(CONF_EXPORT_TOPIC_DAY, "export/day")
@@ -505,6 +513,10 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
         }
         await self.storage.async_save(data)
         _LOGGER.debug("Сохранено состояние для %s", self.name)
+
+    async def async_save_state(self):
+        """Сохранить состояние в хранилище (публичный метод)."""
+        await self._save_state()
 
     def _subscribe_topics(self):
         self._client.subscribe(self.topic_day)
