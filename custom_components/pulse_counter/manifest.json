@@ -1,7 +1,7 @@
 {
   "domain": "pulse_counter",
   "name": "Pulse Counter Manager",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "requirements": ["paho-mqtt>=2.1.0"],
   "dependencies": [],
   "codeowners": ["@NagibinA"],
