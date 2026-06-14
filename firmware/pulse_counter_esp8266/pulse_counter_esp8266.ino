@@ -1,7 +1,19 @@
+/*
+ * Pulse Counter Manager - ESP8266 Firmware v1.4.0
+ * For two-tariff electricity meter with pulse output
+ * 
+ * Features:
+ * - Two-tariff support (day/night)
+ * - MQTT retain for state persistence
+ * - Adjustable threshold via MQTT (+/- commands)
+ * - LWT (Last Will and Testament)
+ * - WiFi STA mode only (AP disabled)
+ */
+
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 
-// ========== НАСТРОЙКИ ==========
+// ========== НАСТРОЙКИ (ИЗМЕНИТЕ ПОД СЕБЯ) ==========
 const char* ssid = "YourWiFi";
 const char* password = "YourPassword";
 IPAddress mqttServer(192, 168, 1, 100);
@@ -45,7 +57,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 }
 
 void setup_wifi() {
-    WiFi.mode(WIFI_STA);  // ← ИЗМЕНЕНИЕ 1: отключение AP
+    WiFi.mode(WIFI_STA);
     WiFi.begin(ssid, password);
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
@@ -57,7 +69,7 @@ void reconnect() {
         if (client.connect(clientID, mqtt_username, mqtt_password,
                           mqtt_willTopic, 0, true, mqtt_payloadNotAvailable)) {
             client.publish(mqtt_willTopic, mqtt_payloadAvailable, true);
-            client.publish(mqttOutTopic, String(impulseCounter).c_str(), true);  // ← ИЗМЕНЕНИЕ 2: ретейн при подключении
+            client.publish(mqttOutTopic, String(impulseCounter).c_str(), true);
             client.subscribe(mqtt_choice);
         } else {
             delay(5000);
@@ -89,12 +101,12 @@ void loop() {
     if ((illuminanceValue < illuminanceThreshold) && impulseDetected) {
         impulseDetected = false;
         impulseCounter++;
-        client.publish(mqttOutTopic, String(impulseCounter).c_str(), true);  // ← ИЗМЕНЕНИЕ 3: ретейн при импульсе
+        client.publish(mqttOutTopic, String(impulseCounter).c_str(), true);
         delay(10);
     }
     
     if (sendReply) {
-        client.publish(mqttOutTopic, String(impulseCounter).c_str(), true);  // ← ИЗМЕНЕНИЕ 4: ретейн при смене тарифа
+        client.publish(mqttOutTopic, String(impulseCounter).c_str(), true);
         impulseCounter = 0;
         sendReply = false;
     }
