@@ -114,6 +114,10 @@ IPAddress mqtt_broker(192, 168, 1, 100);
 
 ### Схема подключения TEMT6000
 
+
+  <img src="images/pulse_counter.png" alt="Схема подключения" width="400">
+
+
 | TEMT6000 | Wemos D1 mini |
 |----------|---------------|
 | VCC (средний) | 3.3V |
