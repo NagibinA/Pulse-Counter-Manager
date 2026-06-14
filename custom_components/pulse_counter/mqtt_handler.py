@@ -320,12 +320,11 @@ class BaseMQTTHandler:
         async_track_time_change(self.hass, _update, second=5)
 
     async def _send_export_value(self):
-        """Отправка показаний в топики экспорта."""
+        """Отправка показаний в топики экспорта (для однотарифных)."""
         if not self.export_enabled or not self._export_client:
             return
         try:
             self._export_client.publish(self.export_topic_day, str(self._total_value))
-            self._export_client.publish(self.export_topic_night, str(self._night_total_kwh if hasattr(self, '_night_total_kwh') else 0))
             _LOGGER.debug("Отправлены экспортные показания для %s", self.name)
         except Exception as e:
             _LOGGER.error("Ошибка отправки экспортных показаний для %s: %s", self.name, e)
@@ -610,13 +609,22 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
             self._client.publish(self.topic_command, command)
             _LOGGER.debug("Отправлена команда: %s для %s", command, self.name)
 
+    async def async_send_threshold_command(self, command: str):
+        """Отправить команду + или - на ESP для регулировки порога."""
+        if not self.esp_available:
+            _LOGGER.warning("ESP недоступна, команда %s не отправлена", command)
+            return
+        if self._client:
+            self._client.publish(self.topic_command, command)
+            _LOGGER.info("Отправлена команда регулировки порога: %s для счетчика %s", command, self.name)
+
     def _schedule_tariff_switching(self):
         async def _check_tariff(now):
             await self._update_current_tariff()
         async_track_time_change(self.hass, _check_tariff, second=0)
 
     async def _send_export_value(self):
-        """Отправка показаний в топики экспорта (переопределение)."""
+        """Отправка показаний в топики экспорта для электроэнергии."""
         if not self.export_enabled or not self._export_client:
             return
         try:
