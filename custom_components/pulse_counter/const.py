@@ -1,7 +1,7 @@
 """Константы для интеграции Pulse Counter Manager."""
 
 DOMAIN = "pulse_counter"
-VERSION = "1.3.2"  # ← ОБНОВЛЕНО
+VERSION = "1.4.0"
 
 # Ссылка на официальные тарифы
 TARIFF_INFO_URL = "https://www.elec.ru/library/rd/tarify-elektroenergiya-2026/st-peterburg.html"
