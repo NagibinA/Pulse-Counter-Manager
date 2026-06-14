@@ -355,6 +355,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             "edit_accumulated": "Изменить накопленные импульсы",
             "edit_tariffs": "Изменить тарифы",
             "edit_pulses": "Изменить коэффициент импульсов",
+            "edit_threshold": "Настроить порог ESP",
             "edit_export": "Настроить экспорт показаний",
             "edit_topics": "Изменить MQTT топики",
             "delete": "Удалить счетчик",
@@ -372,6 +373,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 return await self.async_step_edit_tariffs()
             elif action == "edit_pulses":
                 return await self.async_step_edit_pulses()
+            elif action == "edit_threshold":
+                return await self.async_step_edit_threshold()
             elif action == "edit_export":
                 return await self.async_step_edit_export()
             elif action == "edit_topics":
@@ -623,6 +626,59 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="edit_pulses",
             data_schema=schema
+        )
+    
+    async def async_step_edit_threshold(self, user_input=None):
+        """Настройка порога ESP (+/-)."""
+        counter = self._entry.data[CONF_COUNTERS][self._selected_counter_id]
+        handler = self._get_handler_by_counter_id()
+        
+        if user_input is not None:
+            action = user_input["action"]
+            if action == "increase":
+                await handler.async_send_threshold_command("+")
+                _LOGGER.info("Отправлена команда увеличения порога для %s", counter[CONF_NAME])
+            elif action == "decrease":
+                await handler.async_send_threshold_command("-")
+                _LOGGER.info("Отправлена команда уменьшения порога для %s", counter[CONF_NAME])
+            elif action == "done":
+                return self.async_create_entry(title="", data={})
+            
+            # Не закрываем форму, чтобы можно было продолжать регулировать
+            return self.async_show_form(
+                step_id="edit_threshold",
+                data_schema=vol.Schema({
+                    vol.Required("action"): vol.In({
+                        "increase": "+10 (увеличить порог)",
+                        "decrease": "-10 (уменьшить порог)",
+                        "done": "Готово",
+                    })
+                }),
+                description_placeholders={
+                    "name": counter[CONF_NAME],
+                    "current": "Команда отправлена. Используйте + и - несколько раз для подбора оптимального порога.\n\n"
+                               "Если ESP пропускает импульсы — уменьшайте порог.\n"
+                               "Если ESP ловит лишние импульсы — увеличивайте порог."
+                }
+            )
+        
+        return self.async_show_form(
+            step_id="edit_threshold",
+            data_schema=vol.Schema({
+                vol.Required("action"): vol.In({
+                    "increase": "+10 (увеличить порог)",
+                    "decrease": "-10 (уменьшить порог)",
+                    "done": "Готово",
+                })
+            }),
+            description_placeholders={
+                "name": counter[CONF_NAME],
+                "current": "Настройка чувствительности ESP.\n\n"
+                           "Когда светодиод счетчика мигает, ESP должна это видеть.\n\n"
+                           "• Если пропускает импульсы — уменьшайте порог\n"
+                           "• Если ловит лишние — увеличивайте порог\n\n"
+                           "Отправьте команду + или - несколько раз для подбора оптимального значения."
+            }
         )
     
     async def async_step_edit_export(self, user_input=None):
