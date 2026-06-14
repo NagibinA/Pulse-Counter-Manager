@@ -27,8 +27,8 @@ METER_TYPES = {
 METER_DEFAULTS = {
     METER_TYPE_ELECTRICITY: {
         "name": "Электроэнергия",
-        "unit": "кВт·ч",
-        "unit_cost": "руб/кВт·ч",
+        "unit": "kWh",
+        "unit_cost": "руб/kWh",
         "pulses_per_unit": 1000,
         "has_tariffs": True,
         "has_day_night": True,
@@ -42,8 +42,8 @@ METER_DEFAULTS = {
     },
     METER_TYPE_WATER: {
         "name": "Вода",
-        "unit": "м³",
-        "unit_cost": "руб/м³",
+        "unit": "m³",
+        "unit_cost": "руб/m³",
         "pulses_per_unit": 100,
         "has_tariffs": False,
         "has_day_night": False,
@@ -56,8 +56,8 @@ METER_DEFAULTS = {
     },
     METER_TYPE_GAS: {
         "name": "Газ",
-        "unit": "м³",
-        "unit_cost": "руб/м³",
+        "unit": "m³",
+        "unit_cost": "руб/m³",
         "pulses_per_unit": 10,
         "has_tariffs": False,
         "has_day_night": False,
@@ -70,8 +70,8 @@ METER_DEFAULTS = {
     },
     METER_TYPE_HEAT: {
         "name": "Тепло",
-        "unit": "Гкал",
-        "unit_cost": "руб/Гкал",
+        "unit": "Gcal",
+        "unit_cost": "руб/Gcal",
         "pulses_per_unit": 1000,
         "has_tariffs": False,
         "has_day_night": False,
@@ -148,11 +148,11 @@ EVENT_THRESHOLD_CHANGED = f"{DOMAIN}_threshold_changed"
 STATE_DAY = "day"
 STATE_NIGHT = "night"
 
-# Единицы измерения
+# Единицы измерения (латиница для совместимости с Energy)
 UNIT_RUB = "руб"
-UNIT_KWH = "кВт·ч"
-UNIT_M3 = "м³"
-UNIT_GCAL = "Гкал"
+UNIT_KWH = "kWh"      # изменено с "кВт·ч"
+UNIT_M3 = "m³"        # изменено с "м³"
+UNIT_GCAL = "Gcal"    # изменено с "Гкал"
 UNIT_IMPULSE = "имп"
 
 # Атрибуты сенсоров
