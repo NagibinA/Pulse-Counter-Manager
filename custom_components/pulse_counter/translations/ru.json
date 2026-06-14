@@ -7,7 +7,11 @@
     "error": {
       "cannot_connect": "Не удалось подключиться к MQTT брокеру",
       "invalid_data": "Неверные данные",
-      "name_exists": "Счетчик с таким именем уже существует"
+      "name_exists": "Счетчик с таким именем уже существует",
+      "invalid_time_format": "Неверный формат времени. Используйте ЧЧ:ММ (например, 23:00)",
+      "tariff_negative": "Тариф не может быть отрицательным",
+      "pulses_positive": "Количество импульсов должно быть больше 0",
+      "invalid_port": "Порт должен быть в диапазоне 1-65535"
     },
     "step": {
       "user": {
@@ -131,14 +135,14 @@
       },
       "edit_threshold": {
         "title": "Настройка порога ESP",
-        "description": "Отправка команд + и - на ESP для регулировки чувствительности датчика.\n\n{current}",
+        "description": "{info}",
         "data": {
           "action": "Команда"
         }
       },
       "edit_export": {
         "title": "Экспорт показаний",
-        "description": "Отправлять показания счетчика в дополнительные MQTT топики",
+        "description": "{info}\n\n{preview}",
         "data": {
           "export_enabled": "Включить экспорт",
           "export_broker_mode": "Брокер",
@@ -146,13 +150,13 @@
           "export_port": "Порт",
           "export_username": "Имя пользователя",
           "export_password": "Пароль",
-          "export_topic_day": "Топик для дневных показаний",
+          "export_topic_day": "Топик для показаний",
           "export_topic_night": "Топик для ночных показаний"
         }
       },
       "edit_topics": {
         "title": "MQTT топики",
-        "description": "Измените MQTT топики",
+        "description": "{info}\n\n{day_preview}\n{night_preview}\n{command_preview}\n{available_preview}",
         "data": {
           "topic_day": "Топик дня",
           "topic_night": "Топик ночи",
@@ -160,10 +164,6 @@
           "topic_command": "Топик команд",
           "topic_available": "Топик статуса"
         }
-      },
-      "delete_counter": {
-        "title": "Удаление счетчика",
-        "description": "Подтвердите удаление счетчика"
       }
     }
   }
