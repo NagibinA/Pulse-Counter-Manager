@@ -108,15 +108,8 @@ class BaseMQTTHandler:
 
     async def _load_state(self):
         """Загрузить состояние из хранилища."""
-        _LOGGER.warning("=== _load_state ВЫЗВАН ДЛЯ %s ===", self.name)
-        
         data = await self.storage.async_load()
-        
         if data:
-            _LOGGER.warning("=== ДАННЫЕ ИЗ STORAGE НАЙДЕНЫ ДЛЯ %s ===", self.name)
-            _LOGGER.warning("partial в storage: %s", data.get("partial"))
-            _LOGGER.warning("total_value в storage: %s", data.get("total_value"))
-            
             self._partial = data.get("partial", 0)
             self._total_value = data.get("total_value", self._total_value)
             self._month_start_value = data.get("month_start_value", self._month_start_value)
@@ -128,13 +121,10 @@ class BaseMQTTHandler:
             if self._last_month_date and isinstance(self._last_month_date, str):
                 self._last_month_date = datetime.fromisoformat(self._last_month_date).date()
             self._last_impulses_per_minute = data.get("last_impulses_per_minute", 0)
-            
-            _LOGGER.warning("=== ПОСЛЕ ЗАГРУЗКИ ДЛЯ %s: partial=%d, total_value=%.1f ===", 
-                           self.name, self._partial, self._total_value)
+            _LOGGER.debug("Загружено состояние для %s: total=%.1f, partial=%d", 
+                         self.name, self._total_value, self._partial)
         else:
-            _LOGGER.warning("=== STORAGE ПУСТ ДЛЯ %s, ИСПОЛЬЗУЮТСЯ ЗНАЧЕНИЯ ПО УМОЛЧАНИЮ ===", self.name)
-            _LOGGER.warning("partial по умолчанию: %d", self._partial)
-            _LOGGER.warning("total_value по умолчанию: %.1f", self._total_value)
+            _LOGGER.debug("Нет сохраненного состояния для %s", self.name)
 
     async def _save_state(self):
         """Сохранить состояние в хранилище."""
@@ -148,18 +138,11 @@ class BaseMQTTHandler:
             "last_impulses_per_minute": self._last_impulses_per_minute,
             "last_update": dt_util.utcnow().isoformat(),
         }
-        
-        _LOGGER.warning("=== СОХРАНЕНИЕ В STORAGE ДЛЯ %s ===", self.name)
-        _LOGGER.warning("Сохраняем partial: %d", self._partial)
-        _LOGGER.warning("Сохраняем total_value: %.1f", self._total_value)
-        
         await self.storage.async_save(data)
         _LOGGER.debug("Сохранено состояние для %s", self.name)
 
     async def async_initialize(self):
         """Инициализация подключения к MQTT."""
-        _LOGGER.warning("=== async_initialize НАЧАЛО ДЛЯ %s ===", self.name)
-        
         # Загружаем сохраненное состояние
         await self._load_state()
         
@@ -174,7 +157,6 @@ class BaseMQTTHandler:
         
         # Обрабатываем накопленные во время перезагрузки импульсы
         if self._pending_impulses > 0:
-            _LOGGER.warning("=== ОБРАБОТКА НАКОПЛЕННЫХ ИМПУЛЬСОВ: %d ===", self._pending_impulses)
             await self._process_impulses(self._pending_impulses)
             self._pending_impulses = 0
         
@@ -183,7 +165,6 @@ class BaseMQTTHandler:
         if self.legacy_mqtt:
             self._schedule_legacy_updates()
         
-        _LOGGER.warning("=== async_initialize КОНЕЦ ДЛЯ %s ===", self.name)
         _LOGGER.info("Обработчик счетчика %s запущен", self.name)
 
     async def async_shutdown(self):
@@ -437,17 +418,8 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
 
     async def _load_state(self):
         """Загрузить состояние из хранилища."""
-        _LOGGER.warning("=== _load_state ВЫЗВАН ДЛЯ ЭЛЕКТРИЧЕСТВА %s ===", self.name)
-        
         data = await self.storage.async_load()
-        
         if data:
-            _LOGGER.warning("=== ДАННЫЕ ИЗ STORAGE НАЙДЕНЫ ДЛЯ %s ===", self.name)
-            _LOGGER.warning("day_partial в storage: %s", data.get("day_partial"))
-            _LOGGER.warning("night_partial в storage: %s", data.get("night_partial"))
-            _LOGGER.warning("day_total_kwh в storage: %s", data.get("day_total_kwh"))
-            _LOGGER.warning("night_total_kwh в storage: %s", data.get("night_total_kwh"))
-            
             self._day_partial = data.get("day_partial", 0)
             self._night_partial = data.get("night_partial", 0)
             self._day_total_kwh = data.get("day_total_kwh", self._day_total_kwh)
@@ -464,13 +436,10 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
             if self._last_month_date and isinstance(self._last_month_date, str):
                 self._last_month_date = datetime.fromisoformat(self._last_month_date).date()
             self._last_impulses_per_minute = data.get("last_impulses_per_minute", 0)
-            
-            _LOGGER.warning("=== ПОСЛЕ ЗАГРУЗКИ ДЛЯ %s: _day_partial=%d, _night_partial=%d, _day_total_kwh=%.1f, _night_total_kwh=%.1f ===", 
-                           self.name, self._day_partial, self._night_partial, self._day_total_kwh, self._night_total_kwh)
+            _LOGGER.debug("Загружено состояние для %s: день=%.1f, ночь=%.1f, day_partial=%d, night_partial=%d", 
+                         self.name, self._day_total_kwh, self._night_total_kwh, self._day_partial, self._night_partial)
         else:
-            _LOGGER.warning("=== STORAGE ПУСТ ДЛЯ %s, ИСПОЛЬЗУЮТСЯ ЗНАЧЕНИЯ ПО УМОЛЧАНИЮ ===", self.name)
-            _LOGGER.warning("_day_partial по умолчанию: %d", self._day_partial)
-            _LOGGER.warning("_night_partial по умолчанию: %d", self._night_partial)
+            _LOGGER.debug("Нет сохраненного состояния для %s", self.name)
 
     async def _save_state(self):
         """Сохранить состояние в хранилище."""
@@ -489,13 +458,6 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
             "last_impulses_per_minute": self._last_impulses_per_minute,
             "last_update": dt_util.utcnow().isoformat(),
         }
-        
-        _LOGGER.warning("=== СОХРАНЕНИЕ В STORAGE ДЛЯ %s ===", self.name)
-        _LOGGER.warning("Сохраняем day_partial: %d", self._day_partial)
-        _LOGGER.warning("Сохраняем night_partial: %d", self._night_partial)
-        _LOGGER.warning("Сохраняем day_total_kwh: %.1f", self._day_total_kwh)
-        _LOGGER.warning("Сохраняем night_total_kwh: %.1f", self._night_total_kwh)
-        
         await self.storage.async_save(data)
         _LOGGER.debug("Сохранено состояние для %s", self.name)
 
@@ -639,7 +601,6 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
 
     async def async_set_day_partial(self, value: int):
         """Установить дневные накопленные импульсы."""
-        _LOGGER.warning("=== async_set_day_partial ВЫЗВАН: value=%d ===", value)
         self._day_partial = value
         await self._save_state()
         await self._notify_listeners()
@@ -647,7 +608,6 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
 
     async def async_set_night_partial(self, value: int):
         """Установить ночные накопленные импульсы."""
-        _LOGGER.warning("=== async_set_night_partial ВЫЗВАН: value=%d ===", value)
         self._night_partial = value
         await self._save_state()
         await self._notify_listeners()
@@ -675,15 +635,11 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
         return self._night_total_kwh
 
     @property
-    def day_partial(self) -> int:
-        """Текущие накопленные дневные импульсы."""
-        _LOGGER.debug("day_partial запрошен: %d", self._day_partial)
+    def day_partial_impulses(self) -> int:
         return self._day_partial
 
     @property
-    def night_partial(self) -> int:
-        """Текущие накопленные ночные импульсы."""
-        _LOGGER.debug("night_partial запрошен: %d", self._night_partial)
+    def night_partial_impulses(self) -> int:
         return self._night_partial
 
     @property
@@ -709,5 +665,9 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
         return round(self.month_night_kwh * self.night_tariff, 2)
 
     @property
-    def month_cost(self) -> float:
+    def month_total_kwh(self) -> float:
+        return round(self.month_day_kwh + self.month_night_kwh, 2)
+
+    @property
+    def month_total_cost(self) -> float:
         return round(self.month_day_cost + self.month_night_cost, 2)
