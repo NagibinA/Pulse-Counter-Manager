@@ -1,7 +1,7 @@
 """Константы для интеграции Pulse Counter Manager."""
 
 DOMAIN = "pulse_counter"
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 
 # Ссылка на официальные тарифы
 TARIFF_INFO_URL = "https://www.elec.ru/library/rd/tarify-elektroenergiya-2026/st-peterburg.html"
@@ -120,16 +120,43 @@ CONF_MONTH_START_VALUE = "month_start_value"
 CONF_MONTH_START_DAY = "month_start_day"
 CONF_MONTH_START_NIGHT = "month_start_night"
 
-# Значения по умолчанию для электроэнергии
+# Константы для уведомлений (НОВЫЕ)
+CONF_NOTIFICATION_ENABLED = "notification_enabled"
+CONF_NOTIFICATION_DAY = "notification_day"
+CONF_NOTIFICATION_TIME = "notification_time"
+CONF_NOTIFICATION_SERVICE = "notification_service"
+CONF_NOTIFICATION_SHOW_DAY = "notification_show_day"
+CONF_NOTIFICATION_SHOW_NIGHT = "notification_show_night"
+CONF_NOTIFICATION_SHOW_TOTAL = "notification_show_total"
+CONF_NOTIFICATION_SHOW_COST = "notification_show_cost"
+CONF_NOTIFICATION_SHOW_MONTH = "notification_show_month"
+CONF_NOTIFICATION_CUSTOM_MESSAGE = "notification_custom_message"
+
+# Значения по умолчанию для уведомлений
+DEFAULT_NOTIFICATION_DAY = 24
+DEFAULT_NOTIFICATION_TIME = "19:00:00"
+DEFAULT_NOTIFICATION_SERVICE = "persistent_notification"
+DEFAULT_NOTIFICATION_SHOW_DAY = True
+DEFAULT_NOTIFICATION_SHOW_NIGHT = True
+DEFAULT_NOTIFICATION_SHOW_TOTAL = True
+DEFAULT_NOTIFICATION_SHOW_COST = True
+DEFAULT_NOTIFICATION_SHOW_MONTH = True
+
+# Доступные сервисы уведомлений
+NOTIFICATION_SERVICES = {
+    "persistent_notification": "📢 Уведомление в Home Assistant",
+    "notify.persistent_notification": "📌 Постоянное уведомление",
+    "notify.mobile_app": "📱 Мобильное приложение",
+    "notify.telegram": "✈️ Telegram",
+    "notify.html5": "🌐 HTML5",
+}
+
+# Значения по умолчанию
 DEFAULT_DAY_TARIFF = 8.10
 DEFAULT_NIGHT_TARIFF = 4.42
 DEFAULT_NIGHT_START = "20:19"
 DEFAULT_NIGHT_END = "04:19"
-
-# Значения по умолчанию для воды/газа/тепла
 DEFAULT_TARIFF = 0
-
-# Общие значения по умолчанию
 DEFAULT_PULSES_PER_UNIT = 1000
 DEFAULT_MQTT_TOPIC_DAY = "Counter/day"
 DEFAULT_MQTT_TOPIC_NIGHT = "Counter/night"
@@ -148,11 +175,11 @@ EVENT_THRESHOLD_CHANGED = f"{DOMAIN}_threshold_changed"
 STATE_DAY = "day"
 STATE_NIGHT = "night"
 
-# Единицы измерения (латиница для совместимости с Energy)
+# Единицы измерения
 UNIT_RUB = "руб"
-UNIT_KWH = "kWh"      # изменено с "кВт·ч"
-UNIT_M3 = "m³"        # изменено с "м³"
-UNIT_GCAL = "Gcal"    # изменено с "Гкал"
+UNIT_KWH = "kWh"
+UNIT_M3 = "m³"
+UNIT_GCAL = "Gcal"
 UNIT_IMPULSE = "имп"
 
 # Атрибуты сенсоров
