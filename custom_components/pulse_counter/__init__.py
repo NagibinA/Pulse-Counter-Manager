@@ -98,23 +98,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async_dispatcher_connect(hass, f"{DOMAIN}_add_counter", async_add_counter)
     )
     
-    # Обработчик остановки HA
+    # Обработчик остановки HA (ИСПРАВЛЕН)
     async def handle_ha_stop(event):
         """При остановке HA останавливаем опрос ESP."""
+        _LOGGER.info("Остановка Home Assistant, прекращение опроса ESP")
         hass.data[DOMAIN]["polling_enabled"] = False
         for handler in hass.data[DOMAIN]["handlers"].values():
-            handler.async_stop_polling()
-        for handler in hass.data[DOMAIN]["handlers"].values():
-            await handler._save_state()
-        _LOGGER.info("Остановлен опрос всех счетчиков при выключении Home Assistant")
+            await handler.async_stop_polling()
+            await handler.async_save_state()
+        _LOGGER.info("Опрос всех счетчиков остановлен, состояние сохранено")
 
     # Обработчик запуска HA
     async def handle_ha_start(event):
         """При запуске HA возобновляем опрос ESP."""
+        _LOGGER.info("Запуск Home Assistant, возобновление опроса ESP")
         hass.data[DOMAIN]["polling_enabled"] = True
         for handler in hass.data[DOMAIN]["handlers"].values():
             await handler.async_start_polling()
-        _LOGGER.info("Возобновлен опрос всех счетчиков при запуске Home Assistant")
+        _LOGGER.info("Опрос всех счетчиков возобновлен")
     
     # Регистрируем обработчики событий
     hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, handle_ha_stop)
@@ -133,6 +134,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Выгрузка интеграции."""
+    
+    _LOGGER.info("Выгрузка Pulse Counter Manager")
     
     # Останавливаем все обработчики
     for handler_id, handler in hass.data[DOMAIN]["handlers"].items():
