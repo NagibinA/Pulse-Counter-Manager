@@ -77,11 +77,11 @@
           "notification_day": "День месяца",
           "notification_time": "Время отправки",
           "notification_service": "Сервис уведомлений",
-          "notification_show_day": "Показывать дневные показания",
-          "notification_show_night": "Показывать ночные показания",
-          "notification_show_total": "Показывать общие показания",
-          "notification_show_cost": "Показывать стоимость",
-          "notification_show_month": "Показывать потребление за месяц",
+          "notification_show_day": "Дневные показания",
+          "notification_show_night": "Ночные показания",
+          "notification_show_total": "Общие показания",
+          "notification_show_cost": "Стоимость",
+          "notification_show_month": "Потребление за месяц",
           "notification_custom_message": "Дополнительный текст"
         }
       },
@@ -189,7 +189,8 @@
           "notification_show_total": "Общие показания",
           "notification_show_month": "Потребление за месяц",
           "notification_show_cost": "Стоимость",
-          "notification_custom_message": "Дополнительный текст"
+          "notification_custom_message": "Дополнительный текст",
+          "test_notification": "📨 Отправить тестовое уведомление"
         }
       }
     }
