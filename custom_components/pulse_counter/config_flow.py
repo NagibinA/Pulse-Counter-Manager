@@ -15,6 +15,8 @@ from .const import (
     METER_DEFAULTS,
     METER_TYPE_ELECTRICITY,
     TARIFF_INFO_URL,
+    EXPORT_BROKER_MAIN,
+    EXPORT_BROKER_CUSTOM,
     CONF_NAME,
     CONF_METER_TYPE,
     CONF_MQTT_BROKER,
@@ -35,10 +37,14 @@ from .const import (
     CONF_NIGHT_END,
     CONF_PULSES_PER_UNIT,
     CONF_UNIT,
-    CONF_LEGACY_MQTT,
-    CONF_LEGACY_TOPIC,
-    CONF_LEGACY_TOPIC_DAY,
-    CONF_LEGACY_TOPIC_NIGHT,
+    CONF_EXPORT_ENABLED,
+    CONF_EXPORT_BROKER_MODE,
+    CONF_EXPORT_BROKER,
+    CONF_EXPORT_PORT,
+    CONF_EXPORT_USERNAME,
+    CONF_EXPORT_PASSWORD,
+    CONF_EXPORT_TOPIC_DAY,
+    CONF_EXPORT_TOPIC_NIGHT,
     CONF_INITIAL_VALUE,
     CONF_INITIAL_DAY_KWH,
     CONF_INITIAL_NIGHT_KWH,
@@ -56,9 +62,11 @@ from .const import (
     DEFAULT_MQTT_TOPIC_MAIN,
     DEFAULT_MQTT_TOPIC_COMMAND,
     DEFAULT_MQTT_TOPIC_AVAILABLE,
-    DEFAULT_LEGACY_TOPIC,
-    DEFAULT_LEGACY_TOPIC_DAY,
-    DEFAULT_LEGACY_TOPIC_NIGHT,
+    DEFAULT_EXPORT_TOPIC_DAY,
+    DEFAULT_EXPORT_TOPIC_NIGHT,
+    DEFAULT_EXPORT_BROKER,
+    DEFAULT_EXPORT_PORT,
+    DEFAULT_EXPORT_BROKER_MODE,
 )
 
 from .storage import PulseCounterStorage
@@ -202,7 +210,12 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_PULSES_PER_UNIT: user_input.get(CONF_PULSES_PER_UNIT, defaults["pulses_per_unit"]),
                         CONF_INITIAL_VALUE: user_input.get(CONF_INITIAL_VALUE, 0),
                         CONF_MONTH_START_VALUE: user_input.get(CONF_MONTH_START_VALUE, 0),
-                        CONF_LEGACY_MQTT: user_input.get(CONF_LEGACY_MQTT, False),
+                        CONF_EXPORT_ENABLED: user_input.get(CONF_EXPORT_ENABLED, False),
+                        CONF_EXPORT_BROKER_MODE: user_input.get(CONF_EXPORT_BROKER_MODE, DEFAULT_EXPORT_BROKER_MODE),
+                        CONF_EXPORT_BROKER: user_input.get(CONF_EXPORT_BROKER, DEFAULT_EXPORT_BROKER),
+                        CONF_EXPORT_PORT: user_input.get(CONF_EXPORT_PORT, DEFAULT_EXPORT_PORT),
+                        CONF_EXPORT_USERNAME: user_input.get(CONF_EXPORT_USERNAME, ""),
+                        CONF_EXPORT_PASSWORD: user_input.get(CONF_EXPORT_PASSWORD, ""),
                     }
                     
                     # Для электроэнергии (двухтарифный)
@@ -220,8 +233,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             CONF_INITIAL_NIGHT_KWH: user_input[CONF_INITIAL_NIGHT_KWH],
                             CONF_MONTH_START_DAY: user_input[CONF_MONTH_START_DAY],
                             CONF_MONTH_START_NIGHT: user_input[CONF_MONTH_START_NIGHT],
-                            CONF_LEGACY_TOPIC_DAY: user_input.get(CONF_LEGACY_TOPIC_DAY, DEFAULT_LEGACY_TOPIC_DAY),
-                            CONF_LEGACY_TOPIC_NIGHT: user_input.get(CONF_LEGACY_TOPIC_NIGHT, DEFAULT_LEGACY_TOPIC_NIGHT),
+                            CONF_EXPORT_TOPIC_DAY: user_input.get(CONF_EXPORT_TOPIC_DAY, DEFAULT_EXPORT_TOPIC_DAY),
+                            CONF_EXPORT_TOPIC_NIGHT: user_input.get(CONF_EXPORT_TOPIC_NIGHT, DEFAULT_EXPORT_TOPIC_NIGHT),
                         })
                     else:
                         # Для воды, газа, тепла (однотарифный)
@@ -229,10 +242,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             CONF_MQTT_TOPIC_MAIN: user_input[CONF_MQTT_TOPIC_MAIN],
                             CONF_MQTT_TOPIC_AVAILABLE: user_input.get(CONF_MQTT_TOPIC_AVAILABLE, defaults["topics"]["available"]),
                             CONF_TARIFF: user_input.get(CONF_TARIFF, DEFAULT_TARIFF),
-                            CONF_LEGACY_TOPIC: user_input.get(CONF_LEGACY_TOPIC, DEFAULT_LEGACY_TOPIC),
+                            CONF_EXPORT_TOPIC_DAY: user_input.get(CONF_EXPORT_TOPIC_DAY, DEFAULT_EXPORT_TOPIC_DAY),
+                            CONF_EXPORT_TOPIC_NIGHT: user_input.get(CONF_EXPORT_TOPIC_NIGHT, DEFAULT_EXPORT_TOPIC_NIGHT),
                         })
                     
-                    # КЛЮЧОМ СЛОВАРЯ ДОЛЖЕН БЫТЬ counter_id, А НЕ counter_name!
+                    # КЛЮЧОМ СЛОВАРЯ ДОЛЖЕН БЫТЬ counter_id
                     new_counters = dict(counters)
                     new_counters[counter_id] = new_counter
                     
@@ -270,9 +284,17 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Required(CONF_INITIAL_NIGHT_KWH, default=0): vol.Coerce(float),
                 vol.Required(CONF_MONTH_START_DAY, default=0): vol.Coerce(float),
                 vol.Required(CONF_MONTH_START_NIGHT, default=0): vol.Coerce(float),
-                vol.Optional(CONF_LEGACY_MQTT, default=False): bool,
-                vol.Optional(CONF_LEGACY_TOPIC_DAY, default=DEFAULT_LEGACY_TOPIC_DAY): str,
-                vol.Optional(CONF_LEGACY_TOPIC_NIGHT, default=DEFAULT_LEGACY_TOPIC_NIGHT): str,
+                vol.Optional(CONF_EXPORT_ENABLED, default=False): bool,
+                vol.Optional(CONF_EXPORT_BROKER_MODE, default=DEFAULT_EXPORT_BROKER_MODE): vol.In({
+                    EXPORT_BROKER_MAIN: "Основной брокер",
+                    EXPORT_BROKER_CUSTOM: "Отдельный брокер",
+                }),
+                vol.Optional(CONF_EXPORT_BROKER, default=DEFAULT_EXPORT_BROKER): str,
+                vol.Optional(CONF_EXPORT_PORT, default=DEFAULT_EXPORT_PORT): int,
+                vol.Optional(CONF_EXPORT_USERNAME, default=""): str,
+                vol.Optional(CONF_EXPORT_PASSWORD, default=""): str,
+                vol.Optional(CONF_EXPORT_TOPIC_DAY, default=DEFAULT_EXPORT_TOPIC_DAY): str,
+                vol.Optional(CONF_EXPORT_TOPIC_NIGHT, default=DEFAULT_EXPORT_TOPIC_NIGHT): str,
             })
         else:
             schema = vol.Schema({
@@ -283,8 +305,16 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Required(CONF_INITIAL_VALUE, default=0): vol.Coerce(float),
                 vol.Required(CONF_MONTH_START_VALUE, default=0): vol.Coerce(float),
                 vol.Optional(CONF_TARIFF, default=DEFAULT_TARIFF): vol.Coerce(float),
-                vol.Optional(CONF_LEGACY_MQTT, default=False): bool,
-                vol.Optional(CONF_LEGACY_TOPIC, default=DEFAULT_LEGACY_TOPIC): str,
+                vol.Optional(CONF_EXPORT_ENABLED, default=False): bool,
+                vol.Optional(CONF_EXPORT_BROKER_MODE, default=DEFAULT_EXPORT_BROKER_MODE): vol.In({
+                    EXPORT_BROKER_MAIN: "Основной брокер",
+                    EXPORT_BROKER_CUSTOM: "Отдельный брокер",
+                }),
+                vol.Optional(CONF_EXPORT_BROKER, default=DEFAULT_EXPORT_BROKER): str,
+                vol.Optional(CONF_EXPORT_PORT, default=DEFAULT_EXPORT_PORT): int,
+                vol.Optional(CONF_EXPORT_USERNAME, default=""): str,
+                vol.Optional(CONF_EXPORT_PASSWORD, default=""): str,
+                vol.Optional(CONF_EXPORT_TOPIC_DAY, default=DEFAULT_EXPORT_TOPIC_DAY): str,
             })
         
         return self.async_show_form(
@@ -325,6 +355,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             "edit_accumulated": "Изменить накопленные импульсы",
             "edit_tariffs": "Изменить тарифы",
             "edit_pulses": "Изменить коэффициент импульсов",
+            "edit_export": "Настроить экспорт показаний",
             "edit_topics": "Изменить MQTT топики",
             "delete": "Удалить счетчик",
         }
@@ -341,6 +372,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 return await self.async_step_edit_tariffs()
             elif action == "edit_pulses":
                 return await self.async_step_edit_pulses()
+            elif action == "edit_export":
+                return await self.async_step_edit_export()
             elif action == "edit_topics":
                 return await self.async_step_edit_topics()
             elif action == "delete":
@@ -454,7 +487,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     day_val = user_input.get("day_impulses", 0)
                     night_val = user_input.get("night_impulses", 0)
                     
-                    # Принудительно обновляем напрямую
                     handler._day_partial = day_val
                     handler._night_partial = night_val
                     await handler._save_state()
@@ -547,7 +579,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Required(CONF_TARIFF, default=handler.tariff if handler else DEFAULT_TARIFF): vol.Coerce(float),
             })
         
-        # Добавляем ссылку на официальные тарифы
         return self.async_show_form(
             step_id="edit_tariffs",
             data_schema=schema,
@@ -592,6 +623,79 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="edit_pulses",
             data_schema=schema
+        )
+    
+    async def async_step_edit_export(self, user_input=None):
+        """Изменение настроек экспорта показаний."""
+        counter = self._entry.data[CONF_COUNTERS][self._selected_counter_id]
+        
+        if user_input is not None:
+            new_counter = dict(counter)
+            new_counter[CONF_EXPORT_ENABLED] = user_input[CONF_EXPORT_ENABLED]
+            new_counter[CONF_EXPORT_BROKER_MODE] = user_input[CONF_EXPORT_BROKER_MODE]
+            
+            if user_input[CONF_EXPORT_BROKER_MODE] == EXPORT_BROKER_CUSTOM:
+                new_counter[CONF_EXPORT_BROKER] = user_input[CONF_EXPORT_BROKER]
+                new_counter[CONF_EXPORT_PORT] = user_input[CONF_EXPORT_PORT]
+                new_counter[CONF_EXPORT_USERNAME] = user_input.get(CONF_EXPORT_USERNAME, "")
+                new_counter[CONF_EXPORT_PASSWORD] = user_input.get(CONF_EXPORT_PASSWORD, "")
+            else:
+                new_counter[CONF_EXPORT_BROKER] = ""
+                new_counter[CONF_EXPORT_PORT] = DEFAULT_EXPORT_PORT
+                new_counter[CONF_EXPORT_USERNAME] = ""
+                new_counter[CONF_EXPORT_PASSWORD] = ""
+            
+            new_counter[CONF_EXPORT_TOPIC_DAY] = user_input[CONF_EXPORT_TOPIC_DAY]
+            new_counter[CONF_EXPORT_TOPIC_NIGHT] = user_input[CONF_EXPORT_TOPIC_NIGHT]
+            
+            counters = dict(self._entry.data[CONF_COUNTERS])
+            counters[self._selected_counter_id] = new_counter
+            
+            self.hass.config_entries.async_update_entry(
+                self._entry,
+                data={**self._entry.data, CONF_COUNTERS: counters}
+            )
+            
+            # Обновляем handler
+            handler = self._get_handler_by_counter_id()
+            if handler:
+                handler.export_enabled = user_input[CONF_EXPORT_ENABLED]
+                handler.export_broker_mode = user_input[CONF_EXPORT_BROKER_MODE]
+                handler.export_topic_day = user_input[CONF_EXPORT_TOPIC_DAY]
+                handler.export_topic_night = user_input[CONF_EXPORT_TOPIC_NIGHT]
+                
+                if user_input[CONF_EXPORT_BROKER_MODE] == EXPORT_BROKER_CUSTOM:
+                    handler.export_broker = user_input[CONF_EXPORT_BROKER]
+                    handler.export_port = user_input[CONF_EXPORT_PORT]
+                    handler.export_username = user_input.get(CONF_EXPORT_USERNAME, "")
+                    handler.export_password = user_input.get(CONF_EXPORT_PASSWORD, "")
+                else:
+                    handler.export_broker = None
+                
+                await handler._connect_export_mqtt()
+            
+            return self.async_create_entry(title="", data={})
+        
+        schema = vol.Schema({
+            vol.Required(CONF_EXPORT_ENABLED, default=counter.get(CONF_EXPORT_ENABLED, False)): bool,
+            vol.Required(CONF_EXPORT_BROKER_MODE, default=counter.get(CONF_EXPORT_BROKER_MODE, DEFAULT_EXPORT_BROKER_MODE)): vol.In({
+                EXPORT_BROKER_MAIN: "Основной брокер",
+                EXPORT_BROKER_CUSTOM: "Отдельный брокер",
+            }),
+            vol.Optional(CONF_EXPORT_BROKER, default=counter.get(CONF_EXPORT_BROKER, DEFAULT_EXPORT_BROKER)): str,
+            vol.Optional(CONF_EXPORT_PORT, default=counter.get(CONF_EXPORT_PORT, DEFAULT_EXPORT_PORT)): int,
+            vol.Optional(CONF_EXPORT_USERNAME, default=counter.get(CONF_EXPORT_USERNAME, "")): str,
+            vol.Optional(CONF_EXPORT_PASSWORD, default=counter.get(CONF_EXPORT_PASSWORD, "")): str,
+            vol.Optional(CONF_EXPORT_TOPIC_DAY, default=counter.get(CONF_EXPORT_TOPIC_DAY, DEFAULT_EXPORT_TOPIC_DAY)): str,
+            vol.Optional(CONF_EXPORT_TOPIC_NIGHT, default=counter.get(CONF_EXPORT_TOPIC_NIGHT, DEFAULT_EXPORT_TOPIC_NIGHT)): str,
+        })
+        
+        return self.async_show_form(
+            step_id="edit_export",
+            data_schema=schema,
+            description_placeholders={
+                "name": counter[CONF_NAME]
+            }
         )
     
     async def async_step_edit_topics(self, user_input=None):
