@@ -93,7 +93,7 @@ class PulseCounterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
     
     async def async_step_user(self, user_input=None):
-        """Первый шаг - подключение к MQTT брокеру."""
+        """Первый шаг - настройка MQTT брокера."""
         errors = {}
         
         if user_input is not None:
@@ -145,7 +145,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         self._selected_counter_id = None
     
     async def async_step_init(self, user_input=None):
-        """Главное меню."""
+        """Главное меню управления счетчиками."""
         if user_input is not None:
             action = user_input.get("action")
             if action == "add_counter":
@@ -300,35 +300,16 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         if not counters:
             return self.async_abort(reason="no_counters")
         
-        # Логируем все счетчики в конфиге
-        _LOGGER.warning("=" * 60)
-        _LOGGER.warning("=== ВСЕ СЧЕТЧИКИ В КОНФИГЕ ===")
-        for cid, cconfig in counters.items():
-            _LOGGER.warning("ID: %s, NAME: %s", cid, cconfig[CONF_NAME])
-        _LOGGER.warning("=" * 60)
-        
         # Создаем словарь для выбора: ключ = counter_id, значение = название
         counter_options = {}
         for cid, cconfig in counters.items():
             counter_options[cid] = cconfig[CONF_NAME]
         
-        _LOGGER.warning("=== counter_options (ID -> NAME): %s ===", counter_options)
-        
         if user_input is not None:
             selected_id = user_input["counter_id"]
-            _LOGGER.warning("=== user_input['counter_id'] = %s (тип: %s) ===", selected_id, type(selected_id))
-            _LOGGER.warning("=== ВЫБРАН ID ИЗ ФОРМЫ: %s ===", selected_id)
-            
-            # Проверяем, существует ли такой ID
-            if selected_id in counters:
-                self._selected_counter_id = selected_id
-                counter_name = counters[selected_id][CONF_NAME]
-                _LOGGER.warning("=== ВЫБРАН СЧЕТЧИК: ID=%s, ИМЯ=%s ===", selected_id, counter_name)
-            else:
-                _LOGGER.warning("=== ОШИБКА: ID %s НЕ НАЙДЕН В СЧЕТЧИКАХ! ===", selected_id)
-                _LOGGER.warning("=== Доступные ID: %s ===", list(counters.keys()))
-                return self.async_abort(reason="invalid_counter")
-            
+            self._selected_counter_id = selected_id
+            counter_name = counters[selected_id][CONF_NAME]
+            _LOGGER.debug("Выбран счетчик: ID=%s, ИМЯ=%s", selected_id, counter_name)
             return await self.async_step_edit_choice()
         
         return self.async_show_form(
@@ -338,8 +319,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     
     async def async_step_edit_choice(self, user_input=None):
         """Действия с выбранным счетчиком."""
-        _LOGGER.warning("=== async_step_edit_choice ВЫЗВАН, selected_counter_id=%s ===", self._selected_counter_id)
-        
         actions = {
             "edit_current": "Изменить текущие показания",
             "edit_month_start": "Изменить показания на начало месяца",
@@ -352,7 +331,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         
         if user_input is not None:
             action = user_input["action"]
-            _LOGGER.warning("=== ВЫБРАНО ДЕЙСТВИЕ: %s ===", action)
             if action == "edit_current":
                 return await self.async_step_edit_current()
             elif action == "edit_month_start":
@@ -375,12 +353,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     
     def _get_handler_by_counter_id(self):
         """Получить handler по counter_id."""
-        _LOGGER.warning("=== _get_handler_by_counter_id: ищем handler для ID=%s ===", self._selected_counter_id)
         handlers = self.hass.data[DOMAIN]["handlers"]
-        _LOGGER.warning("=== Доступные handler ID: %s ===", list(handlers.keys()))
-        handler = handlers.get(self._selected_counter_id)
-        _LOGGER.warning("=== handler найден: %s ===", handler is not None)
-        return handler
+        return handlers.get(self._selected_counter_id)
     
     async def async_step_edit_current(self, user_input=None):
         """Изменение текущих показаний."""
@@ -473,53 +447,38 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         counter = self._entry.data[CONF_COUNTERS][self._selected_counter_id]
         meter_type = counter.get(CONF_METER_TYPE, METER_TYPE_ELECTRICITY)
         
-        _LOGGER.warning("=" * 60)
-        _LOGGER.warning("=== async_step_edit_accumulated ВЫЗВАН ===")
-        _LOGGER.warning("selected_counter_id: %s", self._selected_counter_id)
-        _LOGGER.warning("user_input: %s", user_input)
-        _LOGGER.warning("=" * 60)
-        
         if user_input is not None:
-            _LOGGER.warning("=== ПОЛУЧЕНЫ ДАННЫЕ ОТ ФОРМЫ: %s ===", user_input)
-            
             handler = self._get_handler_by_counter_id()
-            _LOGGER.warning("handler найден: %s", handler is not None)
-            
             if handler:
                 if meter_type == METER_TYPE_ELECTRICITY:
                     day_val = user_input.get("day_impulses", 0)
                     night_val = user_input.get("night_impulses", 0)
-                    _LOGGER.warning("Принудительная установка: день=%s, ночь=%s", day_val, night_val)
                     
                     # Принудительно обновляем напрямую
                     handler._day_partial = day_val
                     handler._night_partial = night_val
                     await handler._save_state()
                     await handler._notify_listeners()
-                    _LOGGER.warning("=== ПРИНУДИТЕЛЬНО УСТАНОВЛЕНО: день=%d, ночь=%d ===", 
-                                   day_val, night_val)
+                    _LOGGER.info("Изменены накопленные импульсы для %s: день=%d, ночь=%d", 
+                                counter[CONF_NAME], day_val, night_val)
                 else:
                     val = user_input.get("impulses", 0)
-                    _LOGGER.warning("Принудительная установка: импульсы=%s", val)
                     handler._partial = val
                     await handler._save_state()
                     await handler._notify_listeners()
-                    _LOGGER.warning("=== ПРИНУДИТЕЛЬНО УСТАНОВЛЕНО: импульсы=%d ===", val)
-            else:
-                _LOGGER.warning("=== handler НЕ НАЙДЕН! ===")
-            
+                    _LOGGER.info("Изменены накопленные импульсы для %s: %d", 
+                                counter[CONF_NAME], val)
             return self.async_create_entry(title="", data={})
         
         # Загружаем значения напрямую из storage
-        _LOGGER.warning("=== ЗАГРУЗКА ЗНАЧЕНИЙ ИЗ STORAGE ===")
         storage = PulseCounterStorage(self.hass, counter[CONF_COUNTER_ID])
         data = await storage.async_load()
-        _LOGGER.warning("data из storage: %s", data)
         
         if meter_type == METER_TYPE_ELECTRICITY:
             current_day = data.get("day_partial", 0) if data else 0
             current_night = data.get("night_partial", 0) if data else 0
-            _LOGGER.warning("Текущие значения из storage: день=%d, ночь=%d", current_day, current_night)
+            _LOGGER.info("Текущие накопленные импульсы для %s из storage: день=%d, ночь=%d", 
+                        counter[CONF_NAME], current_day, current_night)
             
             schema = vol.Schema({
                 vol.Required("day_impulses", default=current_day): int,
@@ -527,7 +486,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             })
         else:
             current_val = data.get("partial", 0) if data else 0
-            _LOGGER.warning("Текущие значения из storage: %d", current_val)
+            _LOGGER.info("Текущие накопленные импульсы для %s из storage: %d", 
+                        counter[CONF_NAME], current_val)
             
             schema = vol.Schema({
                 vol.Required("impulses", default=current_val): int,
@@ -535,10 +495,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         
         return self.async_show_form(
             step_id="edit_accumulated",
-            data_schema=schema,
-            description_placeholders={
-                "name": counter[CONF_NAME]
-            }
+            data_schema=schema
         )
     
     async def async_step_edit_tariffs(self, user_input=None):
