@@ -1,0 +1,115 @@
+# ESPHome Minimal Firmware for Pulse Counter
+# Same functionality as original Arduino firmware
+# - Counts pulses from TEMT6000 on A0
+# - Publishes to MQTT topics
+# - Responds to day/night commands
+# - Adjusts threshold with +/- commands
+
+substitutions:
+  device_name: "pulse-counter"
+  wifi_ssid: "YourWiFiNetwork"
+  wifi_password: "YourWiFiPassword"
+  mqtt_broker: "192.168.1.100"
+  mqtt_username: ""
+  mqtt_password: ""
+
+esphome:
+  name: ${device_name}
+  platform: ESP8266
+  board: d1_mini
+
+wifi:
+  ssid: ${wifi_ssid}
+  password: ${wifi_password}
+  fast_connect: true
+  ap: false
+
+mqtt:
+  broker: ${mqtt_broker}
+  port: 1883
+  username: ${mqtt_username}
+  password: ${mqtt_password}
+  
+  birth_message:
+    topic: Counter/Available
+    payload: "online"
+    retain: true
+  will_message:
+    topic: Counter/Available
+    payload: "offline"
+    retain: true
+
+api:
+  disabled: true
+
+logger:
+  level: INFO
+
+globals:
+  - id: pulse_counter
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: threshold
+    type: float
+    restore_value: no
+    initial_value: '40'
+  - id: last_state
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: current_topic
+    type: string
+    restore_value: no
+    initial_value: "Counter/day"
+
+sensor:
+  - platform: adc
+    pin: A0
+    id: raw_light
+    update_interval: 10ms
+    internal: true
+    filters:
+      - lambda: |-
+          static unsigned long last_pulse = 0;
+          const unsigned long debounce = 50;
+          unsigned long now = millis();
+          
+          bool current_state = (x > id(threshold));
+          
+          if (!current_state && id(last_state) && (now - last_pulse > debounce)) {
+            id(pulse_counter)++;
+            last_pulse = now;
+            id(mqtt_client).publish(id(current_topic), to_string(id(pulse_counter)).c_str(), true);
+          }
+          
+          id(last_state) = current_state;
+          return x;
+
+mqtt:
+  on_message:
+    - topic: Counter/choice
+      then:
+        - lambda: |-
+            std::string payload = x.c_str();
+            
+            if (payload == "day") {
+              id(current_topic) = "Counter/day";
+              id(mqtt_client).publish("Counter/day", to_string(id(pulse_counter)).c_str(), true);
+            }
+            else if (payload == "night") {
+              id(current_topic) = "Counter/night";
+              id(mqtt_client).publish("Counter/night", to_string(id(pulse_counter)).c_str(), true);
+            }
+            else if (payload == "+") {
+              float new_threshold = id(threshold) + 10;
+              if (new_threshold <= 200) {
+                id(threshold) = new_threshold;
+              }
+            }
+            else if (payload == "-") {
+              float new_threshold = id(threshold) - 10;
+              if (new_threshold >= 10) {
+                id(threshold) = new_threshold;
+              }
+            }
