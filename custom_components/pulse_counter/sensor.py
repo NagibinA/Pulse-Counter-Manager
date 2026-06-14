@@ -69,77 +69,6 @@ class PulseCounterBaseSensor(SensorEntity):
         self.async_write_ha_state()
 
 
-"""Сенсоры для интеграции Pulse Counter Manager."""
-
-from homeassistant.components.sensor import SensorEntity
-from homeassistant.core import callback
-
-from .const import (
-    DOMAIN,
-    UNIT_RUB,
-    UNIT_KWH,
-    UNIT_M3,
-    UNIT_GCAL,
-    METER_TYPE_ELECTRICITY,
-    METER_TYPE_WATER,
-    METER_TYPE_GAS,
-    METER_TYPE_HEAT,
-)
-
-
-async def async_setup_entry(hass, entry, async_add_entities):
-    """Настройка сенсоров."""
-    sensors = []
-    
-    for handler_id, handler in hass.data[DOMAIN]["handlers"].items():
-        meter_type = handler.meter_type
-        
-        if meter_type == METER_TYPE_ELECTRICITY:
-            sensors.extend([
-                PulseCounterTotalValueSensor(handler),
-                PulseCounterDayKwhSensor(handler),
-                PulseCounterNightKwhSensor(handler),
-                PulseCounterMonthDayKwhSensor(handler),
-                PulseCounterMonthNightKwhSensor(handler),
-                PulseCounterMonthTotalKwhSensor(handler),
-                PulseCounterMonthDayCostSensor(handler),
-                PulseCounterMonthNightCostSensor(handler),
-                PulseCounterMonthTotalCostSensor(handler),
-                PulseCounterImpulsesSensor(handler),
-            ])
-        else:
-            # Для воды, газа, тепла
-            sensors.extend([
-                PulseCounterTotalValueSensor(handler),
-                PulseCounterMonthValueSensor(handler),
-                PulseCounterMonthCostSensor(handler),
-                PulseCounterImpulsesSensor(handler),
-            ])
-    
-    async_add_entities(sensors, True)
-
-
-class PulseCounterBaseSensor(SensorEntity):
-    """Базовый класс сенсора."""
-
-    def __init__(self, handler):
-        self.handler = handler
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, handler.counter_id)},
-            "name": handler.name,
-            "manufacturer": "NagibinA",
-            "model": f"Pulse Counter ({handler.meter_type})",
-        }
-        self._attr_should_poll = False
-
-    async def async_added_to_hass(self):
-        self.async_on_remove(self.handler.async_add_listener(self._async_update))
-
-    @callback
-    def _async_update(self):
-        self.async_write_ha_state()
-
-
 # ========== Общие сенсоры для всех типов ==========
 
 class PulseCounterTotalValueSensor(PulseCounterBaseSensor):
@@ -149,7 +78,7 @@ class PulseCounterTotalValueSensor(PulseCounterBaseSensor):
         super().__init__(handler)
         self._attr_unique_id = f"{handler.counter_id}_total"
         self._attr_name = f"{handler.name} Всего"
-        self._attr_unit_of_measurement = handler.unit
+        self._attr_native_unit_of_measurement = handler.unit
         self._attr_device_class = "energy"
         self._attr_state_class = "total_increasing"
         
@@ -174,7 +103,7 @@ class PulseCounterMonthValueSensor(PulseCounterBaseSensor):
         super().__init__(handler)
         self._attr_unique_id = f"{handler.counter_id}_month_value"
         self._attr_name = f"{handler.name} За месяц"
-        self._attr_unit_of_measurement = handler.unit
+        self._attr_native_unit_of_measurement = handler.unit
         self._attr_device_class = "energy"
         self._attr_state_class = "total"
         
@@ -197,7 +126,9 @@ class PulseCounterMonthCostSensor(PulseCounterBaseSensor):
         super().__init__(handler)
         self._attr_unique_id = f"{handler.counter_id}_month_cost"
         self._attr_name = f"{handler.name} Стоимость"
-        self._attr_unit_of_measurement = UNIT_RUB
+        self._attr_native_unit_of_measurement = UNIT_RUB
+        self._attr_device_class = "monetary"
+        self._attr_state_class = "total"
         self._attr_icon = "mdi:cash"
 
     @property
@@ -213,14 +144,16 @@ class PulseCounterMonthCostSensor(PulseCounterBaseSensor):
 
 
 class PulseCounterImpulsesSensor(PulseCounterBaseSensor):
-    """Количество импульсов в минуту."""
+    """Получено импульсов за минуту."""
 
     def __init__(self, handler):
         super().__init__(handler)
         self._attr_unique_id = f"{handler.counter_id}_impulses_per_minute"
-        self._attr_name = f"{handler.name} Имп./мин."
-        self._attr_unit_of_measurement = "имп"
+        self._attr_name = f"{handler.name} Получено импульсов"
+        self._attr_native_unit_of_measurement = "имп/мин"
         self._attr_icon = "mdi:pulse"
+        self._attr_device_class = None
+        self._attr_state_class = "measurement"
 
     @property
     def state(self):
@@ -235,8 +168,8 @@ class PulseCounterDayKwhSensor(PulseCounterBaseSensor):
     def __init__(self, handler):
         super().__init__(handler)
         self._attr_unique_id = f"{handler.counter_id}_day_kwh"
-        self._attr_name = f"{handler.name} День всего"
-        self._attr_unit_of_measurement = UNIT_KWH
+        self._attr_name = f"{handler.name} Энергия дневная"
+        self._attr_native_unit_of_measurement = UNIT_KWH
         self._attr_device_class = "energy"
         self._attr_state_class = "total_increasing"
         self._attr_icon = "mdi:weather-sunny"
@@ -260,8 +193,8 @@ class PulseCounterNightKwhSensor(PulseCounterBaseSensor):
     def __init__(self, handler):
         super().__init__(handler)
         self._attr_unique_id = f"{handler.counter_id}_night_kwh"
-        self._attr_name = f"{handler.name} Ночь всего"
-        self._attr_unit_of_measurement = UNIT_KWH
+        self._attr_name = f"{handler.name} Энергия ночная"
+        self._attr_native_unit_of_measurement = UNIT_KWH
         self._attr_device_class = "energy"
         self._attr_state_class = "total_increasing"
         self._attr_icon = "mdi:weather-night"
@@ -285,8 +218,8 @@ class PulseCounterMonthDayKwhSensor(PulseCounterBaseSensor):
     def __init__(self, handler):
         super().__init__(handler)
         self._attr_unique_id = f"{handler.counter_id}_month_day_kwh"
-        self._attr_name = f"{handler.name} День за месяц"
-        self._attr_unit_of_measurement = UNIT_KWH
+        self._attr_name = f"{handler.name} Энергия дневная за месяц"
+        self._attr_native_unit_of_measurement = UNIT_KWH
         self._attr_device_class = "energy"
         self._attr_state_class = "total"
         self._attr_icon = "mdi:weather-sunny"
@@ -302,8 +235,8 @@ class PulseCounterMonthNightKwhSensor(PulseCounterBaseSensor):
     def __init__(self, handler):
         super().__init__(handler)
         self._attr_unique_id = f"{handler.counter_id}_month_night_kwh"
-        self._attr_name = f"{handler.name} Ночь за месяц"
-        self._attr_unit_of_measurement = UNIT_KWH
+        self._attr_name = f"{handler.name} Энергия ночная за месяц"
+        self._attr_native_unit_of_measurement = UNIT_KWH
         self._attr_device_class = "energy"
         self._attr_state_class = "total"
         self._attr_icon = "mdi:weather-night"
@@ -319,15 +252,15 @@ class PulseCounterMonthTotalKwhSensor(PulseCounterBaseSensor):
     def __init__(self, handler):
         super().__init__(handler)
         self._attr_unique_id = f"{handler.counter_id}_month_total_kwh"
-        self._attr_name = f"{handler.name} Всего за месяц"
-        self._attr_unit_of_measurement = UNIT_KWH
+        self._attr_name = f"{handler.name} Энергия всего за месяц"
+        self._attr_native_unit_of_measurement = UNIT_KWH
         self._attr_device_class = "energy"
         self._attr_state_class = "total"
         self._attr_icon = "mdi:lightning-bolt"
 
     @property
     def state(self):
-        return self.handler.month_value
+        return self.handler.month_total_kwh
 
 
 class PulseCounterMonthDayCostSensor(PulseCounterBaseSensor):
@@ -336,9 +269,11 @@ class PulseCounterMonthDayCostSensor(PulseCounterBaseSensor):
     def __init__(self, handler):
         super().__init__(handler)
         self._attr_unique_id = f"{handler.counter_id}_month_day_cost"
-        self._attr_name = f"{handler.name} Стоимость день"
-        self._attr_unit_of_measurement = UNIT_RUB
-        self._attr_icon = "mdi:cash"
+        self._attr_name = f"{handler.name} Стоимость за дневной тариф в месяц"
+        self._attr_native_unit_of_measurement = UNIT_RUB
+        self._attr_device_class = "monetary"
+        self._attr_state_class = "total"
+        self._attr_icon = "mdi:currency-rub"
 
     @property
     def state(self):
@@ -358,9 +293,11 @@ class PulseCounterMonthNightCostSensor(PulseCounterBaseSensor):
     def __init__(self, handler):
         super().__init__(handler)
         self._attr_unique_id = f"{handler.counter_id}_month_night_cost"
-        self._attr_name = f"{handler.name} Стоимость ночь"
-        self._attr_unit_of_measurement = UNIT_RUB
-        self._attr_icon = "mdi:cash"
+        self._attr_name = f"{handler.name} Стоимость за ночной тариф в месяц"
+        self._attr_native_unit_of_measurement = UNIT_RUB
+        self._attr_device_class = "monetary"
+        self._attr_state_class = "total"
+        self._attr_icon = "mdi:currency-rub"
 
     @property
     def state(self):
@@ -380,13 +317,15 @@ class PulseCounterMonthTotalCostSensor(PulseCounterBaseSensor):
     def __init__(self, handler):
         super().__init__(handler)
         self._attr_unique_id = f"{handler.counter_id}_month_total_cost"
-        self._attr_name = f"{handler.name} Стоимость всего"
-        self._attr_unit_of_measurement = UNIT_RUB
-        self._attr_icon = "mdi:cash-multiple"
+        self._attr_name = f"{handler.name} Стоимость электричества за месяц"
+        self._attr_native_unit_of_measurement = UNIT_RUB
+        self._attr_device_class = "monetary"
+        self._attr_state_class = "total"
+        self._attr_icon = "mdi:wallet"
 
     @property
     def state(self):
-        return self.handler.month_cost
+        return self.handler.month_total_cost
 
     @property
     def extra_state_attributes(self):
@@ -396,4 +335,6 @@ class PulseCounterMonthTotalCostSensor(PulseCounterBaseSensor):
             "day_tariff": self.handler.day_tariff,
             "night_tariff": self.handler.night_tariff,
             "current_tariff": self.handler.current_tariff,
+            "month_day_kwh": self.handler.month_day_kwh,
+            "month_night_kwh": self.handler.month_night_kwh,
         }
