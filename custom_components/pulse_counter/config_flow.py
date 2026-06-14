@@ -55,6 +55,16 @@ from .const import (
     CONF_MONTH_START_VALUE,
     CONF_MONTH_START_DAY,
     CONF_MONTH_START_NIGHT,
+    CONF_NOTIFICATION_ENABLED,
+    CONF_NOTIFICATION_DAY,
+    CONF_NOTIFICATION_TIME,
+    CONF_NOTIFICATION_SERVICE,
+    CONF_NOTIFICATION_SHOW_DAY,
+    CONF_NOTIFICATION_SHOW_NIGHT,
+    CONF_NOTIFICATION_SHOW_TOTAL,
+    CONF_NOTIFICATION_SHOW_COST,
+    CONF_NOTIFICATION_SHOW_MONTH,
+    CONF_NOTIFICATION_CUSTOM_MESSAGE,
     DEFAULT_DAY_TARIFF,
     DEFAULT_NIGHT_TARIFF,
     DEFAULT_NIGHT_START,
@@ -71,6 +81,15 @@ from .const import (
     DEFAULT_EXPORT_BROKER,
     DEFAULT_EXPORT_PORT,
     DEFAULT_EXPORT_BROKER_MODE,
+    DEFAULT_NOTIFICATION_DAY,
+    DEFAULT_NOTIFICATION_TIME,
+    DEFAULT_NOTIFICATION_SERVICE,
+    DEFAULT_NOTIFICATION_SHOW_DAY,
+    DEFAULT_NOTIFICATION_SHOW_NIGHT,
+    DEFAULT_NOTIFICATION_SHOW_TOTAL,
+    DEFAULT_NOTIFICATION_SHOW_COST,
+    DEFAULT_NOTIFICATION_SHOW_MONTH,
+    NOTIFICATION_SERVICES,
 )
 
 from .storage import PulseCounterStorage
@@ -100,8 +119,8 @@ async def test_mqtt_connection(broker, port, username=None, password=None):
 
 
 def validate_time_format(time_str: str) -> bool:
-    """Проверка формата времени HH:MM."""
-    pattern = re.compile(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$')
+    """Проверка формата времени HH:MM или HH:MM:SS."""
+    pattern = re.compile(r'^([0-1]?[0-9]|2[0-3]):([0-5][0-9])(:([0-5][0-9]))?$')
     return bool(pattern.match(time_str))
 
 
@@ -250,6 +269,12 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 if user_input.get(CONF_EXPORT_PORT, 1883) < 1 or user_input.get(CONF_EXPORT_PORT, 1883) > 65535:
                     errors[CONF_EXPORT_PORT] = "invalid_port"
                 
+                # Валидация дня месяца для уведомлений
+                if user_input.get(CONF_NOTIFICATION_ENABLED, False):
+                    notification_day = user_input.get(CONF_NOTIFICATION_DAY, DEFAULT_NOTIFICATION_DAY)
+                    if notification_day < 1 or notification_day > 31:
+                        errors[CONF_NOTIFICATION_DAY] = "invalid_day"
+                
                 if not errors:
                     counter_name = user_input[CONF_NAME]
                     counter_id = f"counter_{counter_name.lower().replace(' ', '_')}"
@@ -271,6 +296,17 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             CONF_EXPORT_PORT: user_input.get(CONF_EXPORT_PORT, DEFAULT_EXPORT_PORT),
                             CONF_EXPORT_USERNAME: user_input.get(CONF_EXPORT_USERNAME, ""),
                             CONF_EXPORT_PASSWORD: user_input.get(CONF_EXPORT_PASSWORD, ""),
+                            # Настройки уведомлений
+                            CONF_NOTIFICATION_ENABLED: user_input.get(CONF_NOTIFICATION_ENABLED, False),
+                            CONF_NOTIFICATION_DAY: user_input.get(CONF_NOTIFICATION_DAY, DEFAULT_NOTIFICATION_DAY),
+                            CONF_NOTIFICATION_TIME: user_input.get(CONF_NOTIFICATION_TIME, DEFAULT_NOTIFICATION_TIME),
+                            CONF_NOTIFICATION_SERVICE: user_input.get(CONF_NOTIFICATION_SERVICE, DEFAULT_NOTIFICATION_SERVICE),
+                            CONF_NOTIFICATION_SHOW_DAY: user_input.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY),
+                            CONF_NOTIFICATION_SHOW_NIGHT: user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT),
+                            CONF_NOTIFICATION_SHOW_TOTAL: user_input.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL),
+                            CONF_NOTIFICATION_SHOW_COST: user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST),
+                            CONF_NOTIFICATION_SHOW_MONTH: user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH),
+                            CONF_NOTIFICATION_CUSTOM_MESSAGE: user_input.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, ""),
                         }
                         
                         if self._meter_type == METER_TYPE_ELECTRICITY:
@@ -395,6 +431,28 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         schema_dict[vol.Optional(CONF_EXPORT_TOPIC_NIGHT, 
             default=user_input.get(CONF_EXPORT_TOPIC_NIGHT, DEFAULT_EXPORT_TOPIC_NIGHT) if user_input else DEFAULT_EXPORT_TOPIC_NIGHT)] = str
         
+        # === Секция 7: Уведомления ===
+        schema_dict[vol.Optional(CONF_NOTIFICATION_ENABLED, 
+            default=user_input.get(CONF_NOTIFICATION_ENABLED, False) if user_input else False)] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_DAY, 
+            default=user_input.get(CONF_NOTIFICATION_DAY, DEFAULT_NOTIFICATION_DAY) if user_input else DEFAULT_NOTIFICATION_DAY)] = int
+        schema_dict[vol.Optional(CONF_NOTIFICATION_TIME, 
+            default=user_input.get(CONF_NOTIFICATION_TIME, DEFAULT_NOTIFICATION_TIME) if user_input else DEFAULT_NOTIFICATION_TIME)] = str
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SERVICE, 
+            default=user_input.get(CONF_NOTIFICATION_SERVICE, DEFAULT_NOTIFICATION_SERVICE) if user_input else DEFAULT_NOTIFICATION_SERVICE)] = vol.In(NOTIFICATION_SERVICES)
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_DAY, 
+            default=user_input.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY) if user_input else DEFAULT_NOTIFICATION_SHOW_DAY)] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_NIGHT, 
+            default=user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT) if user_input else DEFAULT_NOTIFICATION_SHOW_NIGHT)] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_TOTAL, 
+            default=user_input.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL) if user_input else DEFAULT_NOTIFICATION_SHOW_TOTAL)] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_COST, 
+            default=user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST) if user_input else DEFAULT_NOTIFICATION_SHOW_COST)] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_MONTH, 
+            default=user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH) if user_input else DEFAULT_NOTIFICATION_SHOW_MONTH)] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_CUSTOM_MESSAGE, 
+            default=user_input.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "") if user_input else "")] = str
+        
         return vol.Schema(schema_dict)
     
     def _build_utility_schema(self, defaults, user_input):
@@ -443,6 +501,24 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         schema_dict[vol.Optional(CONF_EXPORT_TOPIC_DAY, 
             default=user_input.get(CONF_EXPORT_TOPIC_DAY, DEFAULT_EXPORT_TOPIC_DAY) if user_input else DEFAULT_EXPORT_TOPIC_DAY)] = str
         
+        # === Секция 7: Уведомления ===
+        schema_dict[vol.Optional(CONF_NOTIFICATION_ENABLED, 
+            default=user_input.get(CONF_NOTIFICATION_ENABLED, False) if user_input else False)] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_DAY, 
+            default=user_input.get(CONF_NOTIFICATION_DAY, DEFAULT_NOTIFICATION_DAY) if user_input else DEFAULT_NOTIFICATION_DAY)] = int
+        schema_dict[vol.Optional(CONF_NOTIFICATION_TIME, 
+            default=user_input.get(CONF_NOTIFICATION_TIME, DEFAULT_NOTIFICATION_TIME) if user_input else DEFAULT_NOTIFICATION_TIME)] = str
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SERVICE, 
+            default=user_input.get(CONF_NOTIFICATION_SERVICE, DEFAULT_NOTIFICATION_SERVICE) if user_input else DEFAULT_NOTIFICATION_SERVICE)] = vol.In(NOTIFICATION_SERVICES)
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_TOTAL, 
+            default=user_input.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL) if user_input else DEFAULT_NOTIFICATION_SHOW_TOTAL)] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_MONTH, 
+            default=user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH) if user_input else DEFAULT_NOTIFICATION_SHOW_MONTH)] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_COST, 
+            default=user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST) if user_input else DEFAULT_NOTIFICATION_SHOW_COST)] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_CUSTOM_MESSAGE, 
+            default=user_input.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "") if user_input else "")] = str
+        
         return vol.Schema(schema_dict)
     
     def _get_electricity_description(self, user_input):
@@ -455,6 +531,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         topic_available = user_input.get(CONF_MQTT_TOPIC_AVAILABLE, DEFAULT_MQTT_TOPIC_AVAILABLE) if user_input else DEFAULT_MQTT_TOPIC_AVAILABLE
         export_topic_day = user_input.get(CONF_EXPORT_TOPIC_DAY, DEFAULT_EXPORT_TOPIC_DAY) if user_input else DEFAULT_EXPORT_TOPIC_DAY
         export_topic_night = user_input.get(CONF_EXPORT_TOPIC_NIGHT, DEFAULT_EXPORT_TOPIC_NIGHT) if user_input else DEFAULT_EXPORT_TOPIC_NIGHT
+        
+        notification_service = user_input.get(CONF_NOTIFICATION_SERVICE, DEFAULT_NOTIFICATION_SERVICE) if user_input else DEFAULT_NOTIFICATION_SERVICE
+        notification_service_desc = NOTIFICATION_SERVICES.get(notification_service, notification_service)
         
         return {
             "section1_title": "📋 Основные параметры",
@@ -503,6 +582,18 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                                       f"📌 Пример: `energy/night`\n"
                                       f"🔍 Предпросмотр: `{get_topic_preview(export_topic_night, name)}`",
             
+            "section7_title": "📬 Ежемесячные уведомления",
+            "notification_enabled_desc": "Автоматически отправлять показания в указанный день месяца",
+            "notification_day_desc": "День месяца для отправки уведомления (1-31)",
+            "notification_time_desc": "Время отправки уведомления (формат ЧЧ:ММ:СС)",
+            "notification_service_desc": f"Куда отправлять уведомление\nТекущий выбор: {notification_service_desc}",
+            "notification_show_day_desc": "Показывать дневные показания в уведомлении",
+            "notification_show_night_desc": "Показывать ночные показания в уведомлении",
+            "notification_show_total_desc": "Показывать общие показания в уведомлении",
+            "notification_show_cost_desc": "Показывать стоимость в уведомлении",
+            "notification_show_month_desc": "Показывать потребление за месяц",
+            "notification_custom_message_desc": "Дополнительный текст в уведомлении\n(например, 'Пора передавать показания')",
+            
             "tariff_url": TARIFF_INFO_URL,
         }
     
@@ -525,6 +616,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         topic_main = user_input.get(CONF_MQTT_TOPIC_MAIN, "") if user_input else ""
         topic_available = user_input.get(CONF_MQTT_TOPIC_AVAILABLE, "") if user_input else ""
         export_topic = user_input.get(CONF_EXPORT_TOPIC_DAY, DEFAULT_EXPORT_TOPIC_DAY) if user_input else DEFAULT_EXPORT_TOPIC_DAY
+        
+        notification_service = user_input.get(CONF_NOTIFICATION_SERVICE, DEFAULT_NOTIFICATION_SERVICE) if user_input else DEFAULT_NOTIFICATION_SERVICE
+        notification_service_desc = NOTIFICATION_SERVICES.get(notification_service, notification_service)
         
         return {
             "section1_title": "📋 Основные параметры",
@@ -558,6 +652,16 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             "export_topic_day_desc": f"Топик для экспорта показаний\n"
                                     f"📌 Пример: `{type_name}/total`\n"
                                     f"🔍 Предпросмотр: `{get_topic_preview(export_topic, name)}`",
+            
+            "section7_title": "📬 Ежемесячные уведомления",
+            "notification_enabled_desc": "Автоматически отправлять показания в указанный день месяца",
+            "notification_day_desc": "День месяца для отправки уведомления (1-31)",
+            "notification_time_desc": "Время отправки уведомления (формат ЧЧ:ММ:СС)",
+            "notification_service_desc": f"Куда отправлять уведомление\nТекущий выбор: {notification_service_desc}",
+            "notification_show_total_desc": "Показывать общие показания в уведомлении",
+            "notification_show_month_desc": "Показывать потребление за месяц",
+            "notification_show_cost_desc": "Показывать стоимость в уведомлении",
+            "notification_custom_message_desc": "Дополнительный текст в уведомлении",
         }
     
     async def async_step_edit_counter(self, user_input=None):
@@ -595,6 +699,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             "edit_threshold": "🔧 Настроить порог ESP",
             "edit_export": "📤 Настроить экспорт показаний",
             "edit_topics": "📡 Изменить MQTT топики",
+            "edit_notifications": "📬 Настроить уведомления",  # НОВЫЙ ПУНКТ
         }
         
         if user_input is not None:
@@ -615,6 +720,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 return await self.async_step_edit_export()
             elif action == "edit_topics":
                 return await self.async_step_edit_topics()
+            elif action == "edit_notifications":
+                return await self.async_step_edit_notifications()
         
         counter = self._entry.data[CONF_COUNTERS][self._selected_counter_id]
         
@@ -854,7 +961,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             description = {
                 "name": counter[CONF_NAME],
                 "info": "Измените тарифы на электроэнергию.",
-                "tariff_info_url": TARIFF_INFO_URL,  # ← КЛЮЧЕВОЕ ДОБАВЛЕНИЕ
+                "tariff_info_url": TARIFF_INFO_URL,
             }
         else:
             schema = vol.Schema({
@@ -864,7 +971,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             description = {
                 "name": counter[CONF_NAME],
                 "info": f"Измените тариф на {counter[CONF_UNIT]}.",
-                "tariff_info_url": TARIFF_INFO_URL,  # ← КЛЮЧЕВОЕ ДОБАВЛЕНИЕ
+                "tariff_info_url": TARIFF_INFO_URL,
             }
         
         return self.async_show_form(
@@ -1137,4 +1244,109 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             step_id="edit_topics", 
             data_schema=schema,
             description_placeholders=description
+        )
+    
+    async def async_step_edit_notifications(self, user_input=None):
+        """Изменение настроек уведомлений."""
+        counter = self._entry.data[CONF_COUNTERS][self._selected_counter_id]
+        meter_type = counter.get(CONF_METER_TYPE, METER_TYPE_ELECTRICITY)
+        
+        if user_input is not None:
+            new_counter = dict(counter)
+            new_counter[CONF_NOTIFICATION_ENABLED] = user_input[CONF_NOTIFICATION_ENABLED]
+            new_counter[CONF_NOTIFICATION_DAY] = user_input[CONF_NOTIFICATION_DAY]
+            new_counter[CONF_NOTIFICATION_TIME] = user_input[CONF_NOTIFICATION_TIME]
+            new_counter[CONF_NOTIFICATION_SERVICE] = user_input[CONF_NOTIFICATION_SERVICE]
+            new_counter[CONF_NOTIFICATION_SHOW_DAY] = user_input.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY)
+            new_counter[CONF_NOTIFICATION_SHOW_NIGHT] = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT)
+            new_counter[CONF_NOTIFICATION_SHOW_TOTAL] = user_input.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL)
+            new_counter[CONF_NOTIFICATION_SHOW_COST] = user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST)
+            new_counter[CONF_NOTIFICATION_SHOW_MONTH] = user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH)
+            new_counter[CONF_NOTIFICATION_CUSTOM_MESSAGE] = user_input.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "")
+            
+            counters = dict(self._entry.data[CONF_COUNTERS])
+            counters[self._selected_counter_id] = new_counter
+            
+            self.hass.config_entries.async_update_entry(
+                self._entry,
+                data={**self._entry.data, CONF_COUNTERS: counters}
+            )
+            
+            # Обновляем настройки в handler без перезагрузки всей интеграции
+            handler = self._get_handler_by_counter_id()
+            if handler:
+                handler.notification_enabled = user_input[CONF_NOTIFICATION_ENABLED]
+                handler.notification_day = user_input[CONF_NOTIFICATION_DAY]
+                handler.notification_time = user_input[CONF_NOTIFICATION_TIME]
+                handler.notification_service = user_input[CONF_NOTIFICATION_SERVICE]
+                handler.notification_show_day = user_input.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY)
+                handler.notification_show_night = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT)
+                handler.notification_show_total = user_input.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL)
+                handler.notification_show_cost = user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST)
+                handler.notification_show_month = user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH)
+                handler.notification_custom_message = user_input.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "")
+                
+                # Сбрасываем флаг уведомления для этого месяца
+                if DOMAIN in self.hass.data and "notified_this_month" in self.hass.data[DOMAIN]:
+                    self.hass.data[DOMAIN]["notified_this_month"][self._selected_counter_id] = False
+                
+                _LOGGER.info("Обновлены настройки уведомлений для %s", counter[CONF_NAME])
+            
+            return self.async_create_entry(title="", data={})
+        
+        # Формируем схему для редактирования уведомлений
+        schema_dict = {}
+        
+        schema_dict[vol.Optional(CONF_NOTIFICATION_ENABLED, 
+            default=counter.get(CONF_NOTIFICATION_ENABLED, False))] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_DAY, 
+            default=counter.get(CONF_NOTIFICATION_DAY, DEFAULT_NOTIFICATION_DAY))] = int
+        schema_dict[vol.Optional(CONF_NOTIFICATION_TIME, 
+            default=counter.get(CONF_NOTIFICATION_TIME, DEFAULT_NOTIFICATION_TIME))] = str
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SERVICE, 
+            default=counter.get(CONF_NOTIFICATION_SERVICE, DEFAULT_NOTIFICATION_SERVICE))] = vol.In(NOTIFICATION_SERVICES)
+        
+        # Поля выбора показаний зависят от типа счетчика
+        if meter_type == METER_TYPE_ELECTRICITY:
+            schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_DAY, 
+                default=counter.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY))] = bool
+            schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_NIGHT, 
+                default=counter.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT))] = bool
+        
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_TOTAL, 
+            default=counter.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL))] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_MONTH, 
+            default=counter.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH))] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_COST, 
+            default=counter.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST))] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_CUSTOM_MESSAGE, 
+            default=counter.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, ""))] = str
+        
+        schema = vol.Schema(schema_dict)
+        
+        # Подсказки
+        if meter_type == METER_TYPE_ELECTRICITY:
+            info_text = (
+                f"Настройте автоматическую отправку показаний счетчика **{counter[CONF_NAME]}**.\n\n"
+                f"• **День месяца**: укажите число, когда нужно отправлять уведомление (например, 24)\n"
+                f"• **Время**: формат ЧЧ:ММ:СС (например, 19:00:00)\n"
+                f"• **Сервис**: выберите куда отправлять (в HA, на телефон, в Telegram)\n"
+                f"• **Показания**: отметьте, что включать в уведомление"
+            )
+        else:
+            info_text = (
+                f"Настройте автоматическую отправку показаний счетчика **{counter[CONF_NAME]}**.\n\n"
+                f"• **День месяца**: укажите число, когда нужно отправлять уведомление (например, 24)\n"
+                f"• **Время**: формат ЧЧ:ММ:СС (например, 19:00:00)\n"
+                f"• **Сервис**: выберите куда отправлять (в HA, на телефон, в Telegram)\n"
+                f"• **Показания**: отметьте, что включать в уведомление"
+            )
+        
+        return self.async_show_form(
+            step_id="edit_notifications",
+            data_schema=schema,
+            description_placeholders={
+                "name": counter[CONF_NAME],
+                "info": info_text,
+            }
         )
