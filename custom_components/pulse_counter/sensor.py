@@ -188,8 +188,8 @@ class PulseCounterDayKwhSensor(PulseCounterBaseSensor):
     def extra_state_attributes(self):
         return {
             "pulses_per_kwh": self.handler.pulses_per_unit,
-            "accumulated_impulses": self.handler._day_partial,
-            "accumulated_kwh": round(self.handler._day_partial / self.handler.pulses_per_unit, 3),
+            "accumulated_impulses": self.handler.day_partial_impulses,
+            "accumulated_kwh": round(self.handler.day_partial_impulses / self.handler.pulses_per_unit, 3),
         }
 
 
@@ -213,8 +213,8 @@ class PulseCounterNightKwhSensor(PulseCounterBaseSensor):
     def extra_state_attributes(self):
         return {
             "pulses_per_kwh": self.handler.pulses_per_unit,
-            "accumulated_impulses": self.handler._night_partial,
-            "accumulated_kwh": round(self.handler._night_partial / self.handler.pulses_per_unit, 3),
+            "accumulated_impulses": self.handler.night_partial_impulses,
+            "accumulated_kwh": round(self.handler.night_partial_impulses / self.handler.pulses_per_unit, 3),
         }
 
 
