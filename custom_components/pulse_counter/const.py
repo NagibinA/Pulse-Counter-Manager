@@ -1,7 +1,7 @@
 """Константы для интеграции Pulse Counter Manager."""
 
 DOMAIN = "pulse_counter"
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 
 # Ссылка на официальные тарифы
 TARIFF_INFO_URL = "https://www.elec.ru/library/rd/tarify-elektroenergiya-2026/st-peterburg.html"
@@ -144,6 +144,7 @@ DEFAULT_EXPORT_BROKER_MODE = EXPORT_BROKER_MAIN
 
 # События и состояния
 EVENT_IMPULSE_RECEIVED = f"{DOMAIN}_impulse_received"
+EVENT_THRESHOLD_CHANGED = f"{DOMAIN}_threshold_changed"
 STATE_DAY = "day"
 STATE_NIGHT = "night"
 
