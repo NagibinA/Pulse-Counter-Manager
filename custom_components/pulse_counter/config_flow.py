@@ -14,6 +14,7 @@ from .const import (
     METER_TYPES,
     METER_DEFAULTS,
     METER_TYPE_ELECTRICITY,
+    TARIFF_INFO_URL,
     CONF_NAME,
     CONF_METER_TYPE,
     CONF_MQTT_BROKER,
@@ -589,7 +590,14 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Required(CONF_TARIFF, default=handler.tariff if handler else DEFAULT_TARIFF): vol.Coerce(float),
             })
         
-        return self.async_show_form(step_id="edit_tariffs", data_schema=schema)
+        # Добавляем ссылку на официальные тарифы
+        return self.async_show_form(
+            step_id="edit_tariffs",
+            data_schema=schema,
+            description_placeholders={
+                "tariff_info_url": TARIFF_INFO_URL
+            }
+        )
     
     async def async_step_edit_pulses(self, user_input=None):
         """Изменение коэффициента импульсов."""
