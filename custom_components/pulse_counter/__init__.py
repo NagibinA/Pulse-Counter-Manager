@@ -2,7 +2,7 @@
 
 import logging
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, CoreState
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform, EVENT_HOMEASSISTANT_START, EVENT_HOMEASSISTANT_STOP
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -38,6 +38,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN] = {}
         hass.data[DOMAIN][CONF_COUNTERS] = {}
         hass.data[DOMAIN]["handlers"] = {}
+        hass.data[DOMAIN]["polling_enabled"] = False
 
     broker = entry.data[CONF_MQTT_BROKER]
     port = entry.data[CONF_MQTT_PORT]
@@ -53,7 +54,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if meter_type == METER_TYPE_ELECTRICITY:
             handler_class = PulseCounterMQTTHandler
         else:
-            # Для воды, газа, тепла
             handler_class = PulseCounterWaterMQTTHandler
         
         handler = handler_class(
@@ -98,22 +98,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async_dispatcher_connect(hass, f"{DOMAIN}_add_counter", async_add_counter)
     )
     
-    # Обработчики событий остановки и запуска HA
+    # Обработчик остановки HA
     async def handle_ha_stop(event):
         """При остановке HA останавливаем опрос ESP."""
+        hass.data[DOMAIN]["polling_enabled"] = False
         for handler in hass.data[DOMAIN]["handlers"].values():
             handler.async_stop_polling()
+        for handler in hass.data[DOMAIN]["handlers"].values():
+            await handler._save_state()
         _LOGGER.info("Остановлен опрос всех счетчиков при выключении Home Assistant")
 
+    # Обработчик запуска HA
     async def handle_ha_start(event):
         """При запуске HA возобновляем опрос ESP."""
+        hass.data[DOMAIN]["polling_enabled"] = True
         for handler in hass.data[DOMAIN]["handlers"].values():
             await handler.async_start_polling()
         _LOGGER.info("Возобновлен опрос всех счетчиков при запуске Home Assistant")
     
     # Регистрируем обработчики событий
     hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, handle_ha_stop)
-    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_START, handle_ha_start)
+    
+    # Если HA уже запущен, запускаем опрос сразу, иначе ждем события старта
+    if hass.state == CoreState.running:
+        await handle_ha_start(None)
+    else:
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_START, handle_ha_start)
     
     _LOGGER.info("Pulse Counter Manager v%s успешно загружен с %d счетчиками", 
                  VERSION, len(hass.data[DOMAIN]["handlers"]))
@@ -129,11 +139,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await handler.async_shutdown()
     
     hass.data[DOMAIN]["handlers"].clear()
+    hass.data[DOMAIN]["polling_enabled"] = False
     
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     
     if unload_ok:
-        hass.data.pop(DOMAIN)
+        if not hass.data[DOMAIN]["handlers"]:
+            hass.data.pop(DOMAIN)
         _LOGGER.info("Pulse Counter Manager успешно выгружен")
     else:
         _LOGGER.error("Ошибка при выгрузке Pulse Counter Manager")
