@@ -98,7 +98,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async_dispatcher_connect(hass, f"{DOMAIN}_add_counter", async_add_counter)
     )
     
-    # Обработчик остановки HA (ИСПРАВЛЕН)
+    # Обработчик остановки HA
     async def handle_ha_stop(event):
         """При остановке HA останавливаем опрос ESP."""
         _LOGGER.info("Остановка Home Assistant, прекращение опроса ESP")
