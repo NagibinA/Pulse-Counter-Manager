@@ -88,7 +88,7 @@ git clone https://github.com/NagibinA/Pulse-Counter-Manager.git pulse_counter
 
 ### Вариант 1: Arduino прошивка
 
-1. Откройте `firmware/pulse_counter_v2.0.ino` в Arduino IDE
+1. Откройте `firmware/pulse_counter_esp8266.ino` в Arduino IDE
 2. Настройте параметры:
 
 ```cpp
