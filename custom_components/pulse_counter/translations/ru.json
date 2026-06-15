@@ -2,7 +2,8 @@
   "title": "Pulse Counter Manager",
   "config": {
     "abort": {
-      "already_configured": "Устройство уже настроено"
+      "already_configured": "Устройство уже настроено",
+      "no_counters": "Нет добавленных счетчиков. Сначала добавьте хотя бы один счетчик."
     },
     "error": {
       "cannot_connect": "Не удалось подключиться к MQTT брокеру",
@@ -76,15 +77,15 @@
           "notification_enabled": "Включить уведомления",
           "notification_day": "День месяца",
           "notification_time": "Время отправки",
-          "notification_service": "Сервис уведомлений",
           "notification_show_day": "Дневные показания",
           "notification_show_night": "Ночные показания",
           "notification_show_total": "Общие показания",
           "notification_show_cost": "Стоимость",
           "notification_show_month": "Потребление за месяц",
+          "notification_show_custom_message": "Показывать дополнительный текст",
           "notification_custom_message": "Дополнительный текст",
-          "notification_send_to_all": "Отправлять на все устройства",
-          "notification_target_devices": "Выберите устройства"
+          "notification_send_to_ha": "Уведомление в Home Assistant",
+          "notification_target_devices": "Мобильные устройства"
         }
       },
       "edit_counter": {
@@ -185,15 +186,15 @@
           "notification_enabled": "Включить ежемесячные уведомления",
           "notification_day": "День месяца",
           "notification_time": "Время отправки",
-          "notification_service": "Сервис уведомлений",
-          "notification_show_day": "Дневные показания",
-          "notification_show_night": "Ночные показания",
-          "notification_show_total": "Общие показания",
-          "notification_show_month": "Потребление за месяц",
-          "notification_show_cost": "Стоимость",
-          "notification_custom_message": "Дополнительный текст",
-          "notification_send_to_all": "Отправлять на все устройства",
-          "notification_target_devices": "Выберите устройства",
+          "notification_send_to_ha": "📢 Уведомление в Home Assistant",
+          "notification_target_devices": "📱 Мобильные устройства (можно выбрать несколько)",
+          "notification_show_day": "☀️ Дневные показания",
+          "notification_show_night": "🌙 Ночные показания",
+          "notification_show_total": "📈 Общие показания",
+          "notification_show_month": "📅 Потребление за месяц",
+          "notification_show_cost": "💰 Стоимость",
+          "notification_show_custom_message": "💬 Показывать дополнительный текст",
+          "notification_custom_message": "💬 Дополнительный текст",
           "test_notification": "📨 Отправить тестовое уведомление"
         }
       }
