@@ -4,6 +4,7 @@ import logging
 import asyncio
 import socket
 import re
+import time
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
@@ -61,15 +62,15 @@ from .const import (
     CONF_NOTIFICATION_ENABLED,
     CONF_NOTIFICATION_DAY,
     CONF_NOTIFICATION_TIME,
-    CONF_NOTIFICATION_SERVICE,
     CONF_NOTIFICATION_SHOW_DAY,
     CONF_NOTIFICATION_SHOW_NIGHT,
     CONF_NOTIFICATION_SHOW_TOTAL,
     CONF_NOTIFICATION_SHOW_COST,
     CONF_NOTIFICATION_SHOW_MONTH,
+    CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE,
     CONF_NOTIFICATION_CUSTOM_MESSAGE,
-    CONF_NOTIFICATION_SEND_TO_ALL,
     CONF_NOTIFICATION_TARGET_DEVICES,
+    CONF_NOTIFICATION_SEND_TO_HA,
     DEFAULT_DAY_TARIFF,
     DEFAULT_NIGHT_TARIFF,
     DEFAULT_NIGHT_START,
@@ -88,15 +89,14 @@ from .const import (
     DEFAULT_EXPORT_BROKER_MODE,
     DEFAULT_NOTIFICATION_DAY,
     DEFAULT_NOTIFICATION_TIME,
-    DEFAULT_NOTIFICATION_SERVICE,
     DEFAULT_NOTIFICATION_SHOW_DAY,
     DEFAULT_NOTIFICATION_SHOW_NIGHT,
     DEFAULT_NOTIFICATION_SHOW_TOTAL,
     DEFAULT_NOTIFICATION_SHOW_COST,
     DEFAULT_NOTIFICATION_SHOW_MONTH,
-    DEFAULT_NOTIFICATION_SEND_TO_ALL,
+    DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE,
     DEFAULT_NOTIFICATION_TARGET_DEVICES,
-    NOTIFICATION_SERVICES,
+    DEFAULT_NOTIFICATION_SEND_TO_HA,
 )
 
 from .storage import PulseCounterStorage
@@ -165,7 +165,7 @@ class PulseCounterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             
             if connected:
                 broker = user_input[CONF_MQTT_BROKER]
-                title = f"Pulse Counter ({broker})"
+                title = f"Счетчики подключенные через брокер MQTT ({broker})"
                 
                 return self.async_create_entry(
                     title=title,
@@ -207,6 +207,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         """Получить список мобильных устройств из device_registry."""
         device_registry = dr.async_get(self.hass)
         mobile_devices = []
+        seen_services = set()
         
         all_services = self.hass.services.async_services()
         notify_services = all_services.get("notify", [])
@@ -214,27 +215,39 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         for device in device_registry.devices.values():
             device_name = device.name_by_user or device.name or "Неизвестное устройство"
             
-            for domain, device_id in device.identifiers:
-                if domain == "mobile_app":
-                    service_name = f"notify.mobile_app_{device_id}"
-                    if service_name in notify_services:
-                        mobile_devices.append({
-                            "id": device_id,
-                            "name": device_name,
-                            "service": service_name
-                        })
-                    break
+            for identifier in device.identifiers:
+                if not isinstance(identifier, tuple):
+                    continue
+                
+                for idx, part in enumerate(identifier):
+                    if part == "mobile_app" and idx + 1 < len(identifier):
+                        device_id = identifier[idx + 1]
+                        service_name = f"notify.mobile_app_{device_id}"
+                        
+                        if service_name in notify_services and service_name not in seen_services:
+                            mobile_devices.append({
+                                "id": str(device_id),
+                                "name": device_name,
+                                "service": service_name
+                            })
+                            seen_services.add(service_name)
+                        break
         
         for service_name in notify_services:
             if service_name.startswith("mobile_app_"):
                 service_full = f"notify.{service_name}"
-                if not any(d["service"] == service_full for d in mobile_devices):
+                if service_full not in seen_services:
                     device_name = service_name.replace("mobile_app_", "").replace("_", " ").title()
                     mobile_devices.append({
                         "id": service_name,
-                        "name": f"📱 {device_name}",
+                        "name": device_name,
                         "service": service_full
                     })
+                    seen_services.add(service_full)
+        
+        _LOGGER.info("Найдено мобильных устройств: %d", len(mobile_devices))
+        for device in mobile_devices:
+            _LOGGER.debug("  - %s (%s)", device["name"], device["service"])
         
         return mobile_devices
     
@@ -278,7 +291,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="select_type",
             data_schema=vol.Schema({
-                vol.Required(CONF_METER_TYPE): vol.In(meter_types_desc)
+                vol.Required(CONF_METER_TYPE, default=METER_TYPE_ELECTRICITY): vol.In(meter_types_desc)
             }),
             description_placeholders={
                 "info": "Выберите тип добавляемого счетчика. От этого зависят доступные настройки.",
@@ -340,15 +353,15 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             CONF_NOTIFICATION_ENABLED: user_input.get(CONF_NOTIFICATION_ENABLED, False),
                             CONF_NOTIFICATION_DAY: user_input.get(CONF_NOTIFICATION_DAY, DEFAULT_NOTIFICATION_DAY),
                             CONF_NOTIFICATION_TIME: user_input.get(CONF_NOTIFICATION_TIME, DEFAULT_NOTIFICATION_TIME),
-                            CONF_NOTIFICATION_SERVICE: user_input.get(CONF_NOTIFICATION_SERVICE, DEFAULT_NOTIFICATION_SERVICE),
                             CONF_NOTIFICATION_SHOW_DAY: user_input.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY),
                             CONF_NOTIFICATION_SHOW_NIGHT: user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT),
                             CONF_NOTIFICATION_SHOW_TOTAL: user_input.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL),
                             CONF_NOTIFICATION_SHOW_COST: user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST),
                             CONF_NOTIFICATION_SHOW_MONTH: user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH),
+                            CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE: user_input.get(CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE, DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE),
                             CONF_NOTIFICATION_CUSTOM_MESSAGE: user_input.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, ""),
-                            CONF_NOTIFICATION_SEND_TO_ALL: user_input.get(CONF_NOTIFICATION_SEND_TO_ALL, DEFAULT_NOTIFICATION_SEND_TO_ALL),
                             CONF_NOTIFICATION_TARGET_DEVICES: user_input.get(CONF_NOTIFICATION_TARGET_DEVICES, DEFAULT_NOTIFICATION_TARGET_DEVICES),
+                            CONF_NOTIFICATION_SEND_TO_HA: user_input.get(CONF_NOTIFICATION_SEND_TO_HA, DEFAULT_NOTIFICATION_SEND_TO_HA),
                         }
                         
                         if self._meter_type == METER_TYPE_ELECTRICITY:
@@ -415,8 +428,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         """Построение схемы для электричества с группировкой."""
         schema_dict = {}
         
+        # Основные параметры
         schema_dict[vol.Required(CONF_NAME, default=user_input.get(CONF_NAME, "") if user_input else "")] = str
         
+        # MQTT топики
         schema_dict[vol.Required(CONF_MQTT_TOPIC_DAY, 
             default=user_input.get(CONF_MQTT_TOPIC_DAY, DEFAULT_MQTT_TOPIC_DAY) if user_input else DEFAULT_MQTT_TOPIC_DAY)] = str
         schema_dict[vol.Required(CONF_MQTT_TOPIC_NIGHT, 
@@ -426,6 +441,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         schema_dict[vol.Required(CONF_MQTT_TOPIC_AVAILABLE, 
             default=user_input.get(CONF_MQTT_TOPIC_AVAILABLE, DEFAULT_MQTT_TOPIC_AVAILABLE) if user_input else DEFAULT_MQTT_TOPIC_AVAILABLE)] = str
         
+        # Тарифы
         schema_dict[vol.Required(CONF_DAY_TARIFF, 
             default=user_input.get(CONF_DAY_TARIFF, DEFAULT_DAY_TARIFF) if user_input else DEFAULT_DAY_TARIFF)] = vol.Coerce(float)
         schema_dict[vol.Required(CONF_NIGHT_TARIFF, 
@@ -435,9 +451,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         schema_dict[vol.Required(CONF_NIGHT_END, 
             default=user_input.get(CONF_NIGHT_END, DEFAULT_NIGHT_END) if user_input else DEFAULT_NIGHT_END)] = str
         
+        # Параметры счетчика
         schema_dict[vol.Required(CONF_PULSES_PER_UNIT, 
             default=user_input.get(CONF_PULSES_PER_UNIT, defaults["pulses_per_unit"]) if user_input else defaults["pulses_per_unit"])] = int
         
+        # Начальные показания
         schema_dict[vol.Required(CONF_INITIAL_DAY_KWH, 
             default=user_input.get(CONF_INITIAL_DAY_KWH, 0) if user_input else 0)] = vol.Coerce(float)
         schema_dict[vol.Required(CONF_INITIAL_NIGHT_KWH, 
@@ -447,6 +465,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         schema_dict[vol.Required(CONF_MONTH_START_NIGHT, 
             default=user_input.get(CONF_MONTH_START_NIGHT, 0) if user_input else 0)] = vol.Coerce(float)
         
+        # Экспорт показаний
         schema_dict[vol.Optional(CONF_EXPORT_ENABLED, 
             default=user_input.get(CONF_EXPORT_ENABLED, False) if user_input else False)] = bool
         schema_dict[vol.Optional(CONF_EXPORT_BROKER_MODE, 
@@ -467,14 +486,13 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         schema_dict[vol.Optional(CONF_EXPORT_TOPIC_NIGHT, 
             default=user_input.get(CONF_EXPORT_TOPIC_NIGHT, DEFAULT_EXPORT_TOPIC_NIGHT) if user_input else DEFAULT_EXPORT_TOPIC_NIGHT)] = str
         
+        # Уведомления
         schema_dict[vol.Optional(CONF_NOTIFICATION_ENABLED, 
             default=user_input.get(CONF_NOTIFICATION_ENABLED, False) if user_input else False)] = bool
         schema_dict[vol.Optional(CONF_NOTIFICATION_DAY, 
             default=user_input.get(CONF_NOTIFICATION_DAY, DEFAULT_NOTIFICATION_DAY) if user_input else DEFAULT_NOTIFICATION_DAY)] = int
         schema_dict[vol.Optional(CONF_NOTIFICATION_TIME, 
             default=user_input.get(CONF_NOTIFICATION_TIME, DEFAULT_NOTIFICATION_TIME) if user_input else DEFAULT_NOTIFICATION_TIME)] = str
-        schema_dict[vol.Optional(CONF_NOTIFICATION_SERVICE, 
-            default=user_input.get(CONF_NOTIFICATION_SERVICE, DEFAULT_NOTIFICATION_SERVICE) if user_input else DEFAULT_NOTIFICATION_SERVICE)] = vol.In(NOTIFICATION_SERVICES)
         schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_DAY, 
             default=user_input.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY) if user_input else DEFAULT_NOTIFICATION_SHOW_DAY)] = bool
         schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_NIGHT, 
@@ -485,12 +503,14 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             default=user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST) if user_input else DEFAULT_NOTIFICATION_SHOW_COST)] = bool
         schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_MONTH, 
             default=user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH) if user_input else DEFAULT_NOTIFICATION_SHOW_MONTH)] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE, 
+            default=user_input.get(CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE, DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE) if user_input else DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE)] = bool
         schema_dict[vol.Optional(CONF_NOTIFICATION_CUSTOM_MESSAGE, 
             default=user_input.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "") if user_input else "")] = str
-        schema_dict[vol.Optional(CONF_NOTIFICATION_SEND_TO_ALL, 
-            default=user_input.get(CONF_NOTIFICATION_SEND_TO_ALL, DEFAULT_NOTIFICATION_SEND_TO_ALL) if user_input else DEFAULT_NOTIFICATION_SEND_TO_ALL)] = bool
         schema_dict[vol.Optional(CONF_NOTIFICATION_TARGET_DEVICES, 
-            default=user_input.get(CONF_NOTIFICATION_TARGET_DEVICES, DEFAULT_NOTIFICATION_TARGET_DEVICES) if user_input else DEFAULT_NOTIFICATION_TARGET_DEVICES)] = vol.All(vol.Coerce(list), vol.Length(min=0))
+            default=user_input.get(CONF_NOTIFICATION_TARGET_DEVICES, DEFAULT_NOTIFICATION_TARGET_DEVICES) if user_input else DEFAULT_NOTIFICATION_TARGET_DEVICES)] = vol.All(cv.ensure_list, [str])
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SEND_TO_HA, 
+            default=user_input.get(CONF_NOTIFICATION_SEND_TO_HA, DEFAULT_NOTIFICATION_SEND_TO_HA) if user_input else DEFAULT_NOTIFICATION_SEND_TO_HA)] = bool
         
         return vol.Schema(schema_dict)
     
@@ -498,24 +518,30 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         """Построение схемы для воды/газа/тепла с группировкой."""
         schema_dict = {}
         
+        # Основные параметры
         schema_dict[vol.Required(CONF_NAME, default=user_input.get(CONF_NAME, "") if user_input else "")] = str
         
+        # MQTT топики
         schema_dict[vol.Required(CONF_MQTT_TOPIC_MAIN, 
             default=user_input.get(CONF_MQTT_TOPIC_MAIN, defaults["topics"]["main"]) if user_input else defaults["topics"]["main"])] = str
         schema_dict[vol.Optional(CONF_MQTT_TOPIC_AVAILABLE, 
             default=user_input.get(CONF_MQTT_TOPIC_AVAILABLE, defaults["topics"]["available"]) if user_input else defaults["topics"]["available"])] = str
         
+        # Параметры счетчика
         schema_dict[vol.Required(CONF_PULSES_PER_UNIT, 
             default=user_input.get(CONF_PULSES_PER_UNIT, defaults["pulses_per_unit"]) if user_input else defaults["pulses_per_unit"])] = int
         
+        # Тариф
         schema_dict[vol.Optional(CONF_TARIFF, 
             default=user_input.get(CONF_TARIFF, DEFAULT_TARIFF) if user_input else DEFAULT_TARIFF)] = vol.Coerce(float)
         
+        # Начальные показания
         schema_dict[vol.Required(CONF_INITIAL_VALUE, 
             default=user_input.get(CONF_INITIAL_VALUE, 0) if user_input else 0)] = vol.Coerce(float)
         schema_dict[vol.Required(CONF_MONTH_START_VALUE, 
             default=user_input.get(CONF_MONTH_START_VALUE, 0) if user_input else 0)] = vol.Coerce(float)
         
+        # Экспорт показаний
         schema_dict[vol.Optional(CONF_EXPORT_ENABLED, 
             default=user_input.get(CONF_EXPORT_ENABLED, False) if user_input else False)] = bool
         schema_dict[vol.Optional(CONF_EXPORT_BROKER_MODE, 
@@ -534,26 +560,27 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         schema_dict[vol.Optional(CONF_EXPORT_TOPIC_DAY, 
             default=user_input.get(CONF_EXPORT_TOPIC_DAY, DEFAULT_EXPORT_TOPIC_DAY) if user_input else DEFAULT_EXPORT_TOPIC_DAY)] = str
         
+        # Уведомления
         schema_dict[vol.Optional(CONF_NOTIFICATION_ENABLED, 
             default=user_input.get(CONF_NOTIFICATION_ENABLED, False) if user_input else False)] = bool
         schema_dict[vol.Optional(CONF_NOTIFICATION_DAY, 
             default=user_input.get(CONF_NOTIFICATION_DAY, DEFAULT_NOTIFICATION_DAY) if user_input else DEFAULT_NOTIFICATION_DAY)] = int
         schema_dict[vol.Optional(CONF_NOTIFICATION_TIME, 
             default=user_input.get(CONF_NOTIFICATION_TIME, DEFAULT_NOTIFICATION_TIME) if user_input else DEFAULT_NOTIFICATION_TIME)] = str
-        schema_dict[vol.Optional(CONF_NOTIFICATION_SERVICE, 
-            default=user_input.get(CONF_NOTIFICATION_SERVICE, DEFAULT_NOTIFICATION_SERVICE) if user_input else DEFAULT_NOTIFICATION_SERVICE)] = vol.In(NOTIFICATION_SERVICES)
         schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_TOTAL, 
             default=user_input.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL) if user_input else DEFAULT_NOTIFICATION_SHOW_TOTAL)] = bool
         schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_MONTH, 
             default=user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH) if user_input else DEFAULT_NOTIFICATION_SHOW_MONTH)] = bool
         schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_COST, 
             default=user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST) if user_input else DEFAULT_NOTIFICATION_SHOW_COST)] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE, 
+            default=user_input.get(CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE, DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE) if user_input else DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE)] = bool
         schema_dict[vol.Optional(CONF_NOTIFICATION_CUSTOM_MESSAGE, 
             default=user_input.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "") if user_input else "")] = str
-        schema_dict[vol.Optional(CONF_NOTIFICATION_SEND_TO_ALL, 
-            default=user_input.get(CONF_NOTIFICATION_SEND_TO_ALL, DEFAULT_NOTIFICATION_SEND_TO_ALL) if user_input else DEFAULT_NOTIFICATION_SEND_TO_ALL)] = bool
         schema_dict[vol.Optional(CONF_NOTIFICATION_TARGET_DEVICES, 
-            default=user_input.get(CONF_NOTIFICATION_TARGET_DEVICES, DEFAULT_NOTIFICATION_TARGET_DEVICES) if user_input else DEFAULT_NOTIFICATION_TARGET_DEVICES)] = vol.All(vol.Coerce(list), vol.Length(min=0))
+            default=user_input.get(CONF_NOTIFICATION_TARGET_DEVICES, DEFAULT_NOTIFICATION_TARGET_DEVICES) if user_input else DEFAULT_NOTIFICATION_TARGET_DEVICES)] = vol.All(cv.ensure_list, [str])
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SEND_TO_HA, 
+            default=user_input.get(CONF_NOTIFICATION_SEND_TO_HA, DEFAULT_NOTIFICATION_SEND_TO_HA) if user_input else DEFAULT_NOTIFICATION_SEND_TO_HA)] = bool
         
         return vol.Schema(schema_dict)
     
@@ -567,9 +594,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         topic_available = user_input.get(CONF_MQTT_TOPIC_AVAILABLE, DEFAULT_MQTT_TOPIC_AVAILABLE) if user_input else DEFAULT_MQTT_TOPIC_AVAILABLE
         export_topic_day = user_input.get(CONF_EXPORT_TOPIC_DAY, DEFAULT_EXPORT_TOPIC_DAY) if user_input else DEFAULT_EXPORT_TOPIC_DAY
         export_topic_night = user_input.get(CONF_EXPORT_TOPIC_NIGHT, DEFAULT_EXPORT_TOPIC_NIGHT) if user_input else DEFAULT_EXPORT_TOPIC_NIGHT
-        
-        notification_service = user_input.get(CONF_NOTIFICATION_SERVICE, DEFAULT_NOTIFICATION_SERVICE) if user_input else DEFAULT_NOTIFICATION_SERVICE
-        notification_service_desc = NOTIFICATION_SERVICES.get(notification_service, notification_service)
         
         return {
             "section1_title": "📋 Основные параметры",
@@ -622,15 +646,15 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             "notification_enabled_desc": "Автоматически отправлять показания в указанный день месяца",
             "notification_day_desc": "День месяца для отправки уведомления (1-31)",
             "notification_time_desc": "Время отправки уведомления (формат ЧЧ:ММ:СС)",
-            "notification_service_desc": f"Куда отправлять уведомление\nТекущий выбор: {notification_service_desc}",
+            "notification_send_to_ha_desc": "Отправлять уведомление в Home Assistant (веб-интерфейс)",
+            "notification_target_devices_desc": "Выберите мобильные устройства для отправки (можно несколько)",
             "notification_show_day_desc": "Показывать дневные показания в уведомлении",
             "notification_show_night_desc": "Показывать ночные показания в уведомлении",
             "notification_show_total_desc": "Показывать общие показания в уведомлении",
             "notification_show_cost_desc": "Показывать стоимость в уведомлении",
             "notification_show_month_desc": "Показывать потребление за месяц",
+            "notification_show_custom_message_desc": "Показывать дополнительный текст в уведомлении",
             "notification_custom_message_desc": "Дополнительный текст в уведомлении\n(например, 'Пора передавать показания')",
-            "notification_send_to_all_desc": "Отправлять на все мобильные устройства",
-            "notification_target_devices_desc": "Выберите конкретные устройства для отправки",
             
             "tariff_url": TARIFF_INFO_URL,
         }
@@ -654,9 +678,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         topic_main = user_input.get(CONF_MQTT_TOPIC_MAIN, "") if user_input else ""
         topic_available = user_input.get(CONF_MQTT_TOPIC_AVAILABLE, "") if user_input else ""
         export_topic = user_input.get(CONF_EXPORT_TOPIC_DAY, DEFAULT_EXPORT_TOPIC_DAY) if user_input else DEFAULT_EXPORT_TOPIC_DAY
-        
-        notification_service = user_input.get(CONF_NOTIFICATION_SERVICE, DEFAULT_NOTIFICATION_SERVICE) if user_input else DEFAULT_NOTIFICATION_SERVICE
-        notification_service_desc = NOTIFICATION_SERVICES.get(notification_service, notification_service)
         
         return {
             "section1_title": "📋 Основные параметры",
@@ -695,13 +716,13 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             "notification_enabled_desc": "Автоматически отправлять показания в указанный день месяца",
             "notification_day_desc": "День месяца для отправки уведомления (1-31)",
             "notification_time_desc": "Время отправки уведомления (формат ЧЧ:ММ:СС)",
-            "notification_service_desc": f"Куда отправлять уведомление\nТекущий выбор: {notification_service_desc}",
+            "notification_send_to_ha_desc": "Отправлять уведомление в Home Assistant (веб-интерфейс)",
+            "notification_target_devices_desc": "Выберите мобильные устройства для отправки (можно несколько)",
             "notification_show_total_desc": "Показывать общие показания в уведомлении",
             "notification_show_month_desc": "Показывать потребление за месяц",
             "notification_show_cost_desc": "Показывать стоимость в уведомлении",
+            "notification_show_custom_message_desc": "Показывать дополнительный текст в уведомлении",
             "notification_custom_message_desc": "Дополнительный текст в уведомлении",
-            "notification_send_to_all_desc": "Отправлять на все мобильные устройства",
-            "notification_target_devices_desc": "Выберите конкретные устройства для отправки",
         }
     
     async def async_step_edit_counter(self, user_input=None):
@@ -779,8 +800,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         handlers = self.hass.data[DOMAIN]["handlers"]
         return handlers.get(self._selected_counter_id)
     
-    async def _send_test_notification(self, handler):
-        """Отправить тестовое уведомление с текущими настройками."""
+    async def _send_test_notification(self, handler, send_to_ha, selected_devices):
+        """Отправить тестовое уведомление."""
         message_lines = []
         
         message_lines.append(f"📊 Показания счетчика")
@@ -806,92 +827,85 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             if handler.notification_show_cost:
                 message_lines.append(f"💰 Стоимость за месяц: **{handler.month_cost:.2f}** руб")
         
-        if handler.notification_custom_message:
+        if handler.notification_show_custom_message and handler.notification_custom_message:
             message_lines.append("")
             message_lines.append(f"💬 {handler.notification_custom_message}")
+        
+        # Добавляем временную метку
+        current_time = time.strftime("%H:%M:%S")
+        message_lines.append("")
+        message_lines.append(f"⏰ {current_time}")
         
         message = "\n".join(message_lines)
         message_title = f"📊 {handler.name}"
         
-        service = handler.notification_service
-        send_to_all = getattr(handler, 'notification_send_to_all', True)
-        target_devices = getattr(handler, 'notification_target_devices', [])
+        # Уникальный ID для каждого тестового уведомления
+        unique_id = f"pulse_counter_test_{handler.counter_id}_{int(time.time())}"
         
         _LOGGER.info("=" * 60)
         _LOGGER.info("Отправка ТЕСТОВОГО уведомления для счетчика: %s", handler.name)
-        _LOGGER.info("Выбранный сервис: '%s'", service)
-        _LOGGER.info("Отправлять на все устройства: %s", send_to_all)
-        _LOGGER.info("Целевые устройства: %s", target_devices)
+        _LOGGER.info("Отправлять в Home Assistant: %s", send_to_ha)
+        _LOGGER.info("Выбранные устройства: %s", selected_devices)
         
-        try:
-            if service == "persistent_notification":
-                _LOGGER.info("→ Отправка через persistent_notification")
-                persistent_notification.async_create(
-                    handler.hass,
-                    message,
-                    title=message_title,
-                    notification_id=f"pulse_counter_test_{handler.counter_id}"
-                )
-                _LOGGER.info("✓ Уведомление создано в persistent_notification")
+        success_count = 0
+        
+        # Отправка в Home Assistant (уникальный ID)
+        if send_to_ha:
+            _LOGGER.info("→ Отправка в Home Assistant")
+            persistent_notification.async_create(
+                handler.hass,
+                message,
+                title=message_title,
+                notification_id=unique_id
+            )
+            _LOGGER.info("✓ Отправлено в Home Assistant")
+            success_count += 1
+        
+        # Отправка на мобильные устройства
+        all_services = handler.hass.services.async_services()
+        notify_services = all_services.get("notify", [])
+        
+        for device_service in selected_devices:
+            if not device_service.startswith("notify."):
+                device_service = f"notify.{device_service}"
             
-            elif service == "notify.notify" or service.startswith("notify.mobile_app_"):
-                all_services = handler.hass.services.async_services()
-                mobile_services = []
-                
-                for service_name in all_services.get("notify", []):
-                    if service_name.startswith("mobile_app_"):
-                        mobile_services.append(f"notify.{service_name}")
-                
-                _LOGGER.info("Найдено мобильных устройств: %d", len(mobile_services))
-                
-                if not mobile_services:
-                    _LOGGER.warning("Мобильные устройства не найдены!")
-                    persistent_notification.async_create(
-                        handler.hass,
-                        f"❌ Не найдено мобильных устройств с Companion App.",
-                        title="📬 Pulse Counter Manager",
-                        notification_id="pulse_counter_mobile_error"
-                    )
-                    return
-                
-                devices_to_send = []
-                
-                if service == "notify.notify" and send_to_all:
-                    devices_to_send = mobile_services
-                    _LOGGER.info("Режим: отправка на ВСЕ устройства")
-                elif service == "notify.notify" and not send_to_all:
-                    for device in target_devices:
-                        if device in mobile_services:
-                            devices_to_send.append(device)
-                    _LOGGER.info("Режим: отправка на ВЫБРАННЫЕ устройства: %s", devices_to_send)
-                elif service.startswith("notify.mobile_app_"):
-                    if service in mobile_services:
-                        devices_to_send = [service]
-                        _LOGGER.info("Режим: отправка на КОНКРЕТНОЕ устройство: %s", service)
-                
-                if not devices_to_send:
-                    _LOGGER.warning("Нет устройств для отправки")
-                    return
-                
-                for mobile_service_name in devices_to_send:
-                    _LOGGER.info("→ Отправка на устройство: %s", mobile_service_name)
+            service_name = device_service.replace("notify.", "")
+            if service_name in notify_services:
+                _LOGGER.info("→ Отправка на устройство: %s", device_service)
+                try:
                     await handler.hass.services.async_call(
                         "notify",
-                        mobile_service_name.replace("notify.", ""),
+                        service_name,
                         {
                             "title": message_title,
-                            "message": message
+                            "message": message,
+                            "data": {"ttl": 0, "priority": "high"}
                         },
                         blocking=False
                     )
-                _LOGGER.info("✓ Отправлено на %d устройств", len(devices_to_send))
-            
-            _LOGGER.info("✅ Тестовое уведомление для %s успешно отправлено", handler.name)
-            _LOGGER.info("=" * 60)
-            
-        except Exception as e:
-            _LOGGER.error("❌ ОШИБКА отправки тестового уведомления для %s: %s", handler.name, e)
-            _LOGGER.error("=" * 60)
+                    _LOGGER.info("✓ Отправлено на %s", device_service)
+                    success_count += 1
+                except Exception as e:
+                    _LOGGER.error("❌ Ошибка отправки на %s: %s", device_service, e)
+            else:
+                _LOGGER.warning("Сервис не найден: %s", device_service)
+        
+        if success_count == 0:
+            _LOGGER.warning("Не было отправлено ни одного уведомления!")
+            persistent_notification.async_create(
+                handler.hass,
+                f"❌ Не удалось отправить тестовое уведомление.\n\n"
+                f"Проверьте настройки:\n"
+                f"- Отправка в Home Assistant: {send_to_ha}\n"
+                f"- Выбранные устройства: {selected_devices}\n\n"
+                f"Убедитесь, что приложение Companion App установлено и вы вошли в аккаунт.",
+                title="📬 Pulse Counter Manager",
+                notification_id=f"pulse_counter_test_error_{int(time.time())}"
+            )
+        else:
+            _LOGGER.info("✅ Тестовое уведомление отправлено в %d мест", success_count)
+        
+        _LOGGER.info("=" * 60)
     
     async def async_step_edit_current(self, user_input=None):
         """Изменение текущих показаний."""
@@ -1407,56 +1421,74 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         
         # Получаем список мобильных устройств
         mobile_devices = await self.async_get_mobile_devices()
-        device_options = {device["service"]: device["name"] for device in mobile_devices}
         
         # Если пользователь нажал кнопку тестового уведомления
-        if user_input is not None and user_input.get("test_notification"):
+        if user_input is not None and user_input.get("test_notification", False):
             handler = self._get_handler_by_counter_id()
             if handler:
-                # Обновляем настройки уведомлений перед отправкой теста
-                handler.notification_enabled = user_input.get(CONF_NOTIFICATION_ENABLED, False)
-                handler.notification_day = user_input.get(CONF_NOTIFICATION_DAY, DEFAULT_NOTIFICATION_DAY)
-                handler.notification_time = user_input.get(CONF_NOTIFICATION_TIME, DEFAULT_NOTIFICATION_TIME)
-                handler.notification_service = user_input.get(CONF_NOTIFICATION_SERVICE, DEFAULT_NOTIFICATION_SERVICE)
-                handler.notification_send_to_all = user_input.get(CONF_NOTIFICATION_SEND_TO_ALL, DEFAULT_NOTIFICATION_SEND_TO_ALL)
-                handler.notification_target_devices = user_input.get(CONF_NOTIFICATION_TARGET_DEVICES, [])
+                # Получаем текущие значения из формы
+                send_to_ha = user_input.get(CONF_NOTIFICATION_SEND_TO_HA, DEFAULT_NOTIFICATION_SEND_TO_HA)
                 
-                if meter_type == METER_TYPE_ELECTRICITY:
-                    handler.notification_show_day = user_input.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY)
-                    handler.notification_show_night = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT)
+                # Преобразуем словарь от cv.multi_select в список
+                selected_devices_raw = user_input.get(CONF_NOTIFICATION_TARGET_DEVICES, {})
+                if isinstance(selected_devices_raw, dict):
+                    selected_devices = [key for key, value in selected_devices_raw.items() if value]
                 else:
-                    handler.notification_show_day = False
-                    handler.notification_show_night = False
+                    selected_devices = selected_devices_raw if isinstance(selected_devices_raw, list) else []
                 
+                # Временно обновляем handler для отправки
+                old_send_to_ha = handler.notification_send_to_ha
+                old_target_devices = handler.notification_target_devices
+                
+                handler.notification_send_to_ha = send_to_ha
+                handler.notification_target_devices = selected_devices
+                handler.notification_show_day = user_input.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY)
+                handler.notification_show_night = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT)
                 handler.notification_show_total = user_input.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL)
                 handler.notification_show_month = user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH)
                 handler.notification_show_cost = user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST)
+                handler.notification_show_custom_message = user_input.get(CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE, DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE)
                 handler.notification_custom_message = user_input.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "")
                 
-                await self._send_test_notification(handler)
-            return await self.async_step_edit_notifications()
+                await self._send_test_notification(handler, send_to_ha, selected_devices)
+                
+                # Восстанавливаем старые настройки
+                handler.notification_send_to_ha = old_send_to_ha
+                handler.notification_target_devices = old_target_devices
+            
+            # Возвращаем форму с теми же значениями
+            return self.async_show_form(
+                step_id="edit_notifications",
+                data_schema=self._build_notification_schema(counter, meter_type, mobile_devices, user_input),
+                description_placeholders={
+                    "name": counter[CONF_NAME],
+                    "info": self._get_notification_info_text(counter[CONF_NAME]),
+                }
+            )
         
         # Обычное сохранение настроек
-        if user_input is not None and not user_input.get("test_notification"):
+        if user_input is not None and not user_input.get("test_notification", False):
             new_counter = dict(counter)
             new_counter[CONF_NOTIFICATION_ENABLED] = user_input[CONF_NOTIFICATION_ENABLED]
             new_counter[CONF_NOTIFICATION_DAY] = user_input[CONF_NOTIFICATION_DAY]
             new_counter[CONF_NOTIFICATION_TIME] = user_input[CONF_NOTIFICATION_TIME]
-            new_counter[CONF_NOTIFICATION_SERVICE] = user_input[CONF_NOTIFICATION_SERVICE]
-            new_counter[CONF_NOTIFICATION_SEND_TO_ALL] = user_input.get(CONF_NOTIFICATION_SEND_TO_ALL, DEFAULT_NOTIFICATION_SEND_TO_ALL)
-            new_counter[CONF_NOTIFICATION_TARGET_DEVICES] = user_input.get(CONF_NOTIFICATION_TARGET_DEVICES, [])
-            
-            if meter_type == METER_TYPE_ELECTRICITY:
-                new_counter[CONF_NOTIFICATION_SHOW_DAY] = user_input.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY)
-                new_counter[CONF_NOTIFICATION_SHOW_NIGHT] = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT)
-            else:
-                new_counter[CONF_NOTIFICATION_SHOW_DAY] = False
-                new_counter[CONF_NOTIFICATION_SHOW_NIGHT] = False
-            
+            new_counter[CONF_NOTIFICATION_SHOW_DAY] = user_input.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY)
+            new_counter[CONF_NOTIFICATION_SHOW_NIGHT] = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT)
             new_counter[CONF_NOTIFICATION_SHOW_TOTAL] = user_input.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL)
             new_counter[CONF_NOTIFICATION_SHOW_MONTH] = user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH)
             new_counter[CONF_NOTIFICATION_SHOW_COST] = user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST)
+            new_counter[CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE] = user_input.get(CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE, DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE)
             new_counter[CONF_NOTIFICATION_CUSTOM_MESSAGE] = user_input.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "")
+            new_counter[CONF_NOTIFICATION_SEND_TO_HA] = user_input.get(CONF_NOTIFICATION_SEND_TO_HA, DEFAULT_NOTIFICATION_SEND_TO_HA)
+            
+            # Преобразуем словарь от cv.multi_select в список
+            selected_devices_raw = user_input.get(CONF_NOTIFICATION_TARGET_DEVICES, {})
+            if isinstance(selected_devices_raw, dict):
+                selected_devices = [key for key, value in selected_devices_raw.items() if value]
+            else:
+                selected_devices = selected_devices_raw if isinstance(selected_devices_raw, list) else []
+            
+            new_counter[CONF_NOTIFICATION_TARGET_DEVICES] = selected_devices
             
             counters = dict(self._entry.data[CONF_COUNTERS])
             counters[self._selected_counter_id] = new_counter
@@ -1471,21 +1503,15 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 handler.notification_enabled = user_input[CONF_NOTIFICATION_ENABLED]
                 handler.notification_day = user_input[CONF_NOTIFICATION_DAY]
                 handler.notification_time = user_input[CONF_NOTIFICATION_TIME]
-                handler.notification_service = user_input[CONF_NOTIFICATION_SERVICE]
-                handler.notification_send_to_all = user_input.get(CONF_NOTIFICATION_SEND_TO_ALL, DEFAULT_NOTIFICATION_SEND_TO_ALL)
-                handler.notification_target_devices = user_input.get(CONF_NOTIFICATION_TARGET_DEVICES, [])
-                
-                if meter_type == METER_TYPE_ELECTRICITY:
-                    handler.notification_show_day = user_input.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY)
-                    handler.notification_show_night = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT)
-                else:
-                    handler.notification_show_day = False
-                    handler.notification_show_night = False
-                
+                handler.notification_show_day = user_input.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY)
+                handler.notification_show_night = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT)
                 handler.notification_show_total = user_input.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL)
                 handler.notification_show_month = user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH)
                 handler.notification_show_cost = user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST)
+                handler.notification_show_custom_message = user_input.get(CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE, DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE)
                 handler.notification_custom_message = user_input.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "")
+                handler.notification_send_to_ha = user_input.get(CONF_NOTIFICATION_SEND_TO_HA, DEFAULT_NOTIFICATION_SEND_TO_HA)
+                handler.notification_target_devices = selected_devices
                 
                 if DOMAIN in self.hass.data and "notified_this_month" in self.hass.data[DOMAIN]:
                     self.hass.data[DOMAIN]["notified_this_month"][self._selected_counter_id] = False
@@ -1494,75 +1520,94 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             
             return self.async_create_entry(title="", data={})
         
-        # Формируем схему для редактирования уведомлений
+        # Первый показ формы - используем сохраненные значения
+        return self.async_show_form(
+            step_id="edit_notifications",
+            data_schema=self._build_notification_schema(counter, meter_type, mobile_devices, None),
+            description_placeholders={
+                "name": counter[CONF_NAME],
+                "info": self._get_notification_info_text(counter[CONF_NAME]),
+            }
+        )
+    
+    def _build_notification_schema(self, counter, meter_type, mobile_devices, user_input):
+        """Построение схемы уведомлений с учетом введенных пользователем значений."""
         schema_dict = {}
         
-        schema_dict[vol.Optional(CONF_NOTIFICATION_ENABLED, 
-            default=counter.get(CONF_NOTIFICATION_ENABLED, False))] = bool
-        schema_dict[vol.Optional(CONF_NOTIFICATION_DAY, 
-            default=counter.get(CONF_NOTIFICATION_DAY, DEFAULT_NOTIFICATION_DAY))] = int
-        schema_dict[vol.Optional(CONF_NOTIFICATION_TIME, 
-            default=counter.get(CONF_NOTIFICATION_TIME, DEFAULT_NOTIFICATION_TIME))] = str
+        # Берем значения из user_input (если есть) или из сохраненных настроек
+        if user_input is not None:
+            # Используем введенные пользователем значения
+            enabled_default = user_input.get(CONF_NOTIFICATION_ENABLED, False)
+            day_default = user_input.get(CONF_NOTIFICATION_DAY, DEFAULT_NOTIFICATION_DAY)
+            time_default = user_input.get(CONF_NOTIFICATION_TIME, DEFAULT_NOTIFICATION_TIME)
+            send_to_ha_default = user_input.get(CONF_NOTIFICATION_SEND_TO_HA, DEFAULT_NOTIFICATION_SEND_TO_HA)
+            show_day_default = user_input.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY)
+            show_night_default = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT)
+            show_total_default = user_input.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL)
+            show_month_default = user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH)
+            show_cost_default = user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST)
+            show_custom_message_default = user_input.get(CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE, DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE)
+            custom_message_default = user_input.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "")
+            
+            selected_devices_raw = user_input.get(CONF_NOTIFICATION_TARGET_DEVICES, {})
+            if isinstance(selected_devices_raw, dict):
+                devices_default = [key for key, value in selected_devices_raw.items() if value]
+            else:
+                devices_default = selected_devices_raw if isinstance(selected_devices_raw, list) else []
+        else:
+            # Используем сохраненные настройки
+            enabled_default = counter.get(CONF_NOTIFICATION_ENABLED, False)
+            day_default = counter.get(CONF_NOTIFICATION_DAY, DEFAULT_NOTIFICATION_DAY)
+            time_default = counter.get(CONF_NOTIFICATION_TIME, DEFAULT_NOTIFICATION_TIME)
+            send_to_ha_default = counter.get(CONF_NOTIFICATION_SEND_TO_HA, DEFAULT_NOTIFICATION_SEND_TO_HA)
+            show_day_default = counter.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY)
+            show_night_default = counter.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT)
+            show_total_default = counter.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL)
+            show_month_default = counter.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH)
+            show_cost_default = counter.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST)
+            show_custom_message_default = counter.get(CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE, DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE)
+            custom_message_default = counter.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "")
+            
+            devices_default = counter.get(CONF_NOTIFICATION_TARGET_DEVICES, [])
+            device_services = {device["service"] for device in mobile_devices}
+            devices_default = [d for d in devices_default if d in device_services]
         
-        # Список сервисов уведомлений: только первый пункт и мобильные устройства
-        notification_services = NOTIFICATION_SERVICES.copy()
-        # Добавляем пункт "На все мобильные устройства"
-        notification_services["notify.notify"] = "📱 На все мобильные устройства"
-        # Добавляем конкретные мобильные устройства
-        for device in mobile_devices:
-            notification_services[device["service"]] = f"📱 {device['name']}"
+        schema_dict[vol.Optional(CONF_NOTIFICATION_ENABLED, default=enabled_default)] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_DAY, default=day_default)] = int
+        schema_dict[vol.Optional(CONF_NOTIFICATION_TIME, default=time_default)] = str
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SEND_TO_HA, default=send_to_ha_default)] = bool
         
-        schema_dict[vol.Optional(CONF_NOTIFICATION_SERVICE, 
-            default=counter.get(CONF_NOTIFICATION_SERVICE, DEFAULT_NOTIFICATION_SERVICE))] = vol.In(notification_services)
-        
-        # Добавляем настройки выбора устройств
-        schema_dict[vol.Optional(CONF_NOTIFICATION_SEND_TO_ALL, 
-            default=counter.get(CONF_NOTIFICATION_SEND_TO_ALL, DEFAULT_NOTIFICATION_SEND_TO_ALL))] = bool
-        
-        if device_options:
-            current_devices = counter.get(CONF_NOTIFICATION_TARGET_DEVICES, [])
-            current_devices = [d for d in current_devices if d in device_options]
-            schema_dict[vol.Optional(CONF_NOTIFICATION_TARGET_DEVICES, 
-                default=current_devices)] = cv.multi_select(device_options)
+        # Используем cv.multi_select только если есть устройства, иначе простой список
+        if mobile_devices and len(mobile_devices) > 0:
+            device_options = {device["service"]: device["name"] for device in mobile_devices}
+            schema_dict[vol.Optional(CONF_NOTIFICATION_TARGET_DEVICES, default=devices_default)] = cv.multi_select(device_options)
+        else:
+            schema_dict[vol.Optional(CONF_NOTIFICATION_TARGET_DEVICES, default=devices_default)] = vol.All(cv.ensure_list, [str])
         
         if meter_type == METER_TYPE_ELECTRICITY:
-            schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_DAY, 
-                default=counter.get(CONF_NOTIFICATION_SHOW_DAY, DEFAULT_NOTIFICATION_SHOW_DAY))] = bool
-            schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_NIGHT, 
-                default=counter.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT))] = bool
+            schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_DAY, default=show_day_default)] = bool
+            schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_NIGHT, default=show_night_default)] = bool
         
-        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_TOTAL, 
-            default=counter.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL))] = bool
-        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_MONTH, 
-            default=counter.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH))] = bool
-        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_COST, 
-            default=counter.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST))] = bool
-        schema_dict[vol.Optional(CONF_NOTIFICATION_CUSTOM_MESSAGE, 
-            default=counter.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, ""))] = str
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_TOTAL, default=show_total_default)] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_MONTH, default=show_month_default)] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_COST, default=show_cost_default)] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE, default=show_custom_message_default)] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_CUSTOM_MESSAGE, default=custom_message_default)] = str
         
         schema_dict[vol.Optional("test_notification", default=False)] = bool
         
-        schema = vol.Schema(schema_dict)
-        
-        info_text = (
-            f"Настройте автоматическую отправку показаний счетчика **{counter[CONF_NAME]}**.\n\n"
+        return vol.Schema(schema_dict)
+    
+    def _get_notification_info_text(self, name):
+        """Возвращает текст подсказки для формы уведомлений."""
+        return (
+            f"Настройте автоматическую отправку показаний счетчика **{name}**.\n\n"
             f"• **День месяца**: укажите число, когда нужно отправлять уведомление (например, 24)\n"
             f"• **Время**: формат ЧЧ:ММ:СС (например, 19:00:00)\n"
-            f"• **Сервис уведомлений**:\n"
-            f"   - **Уведомление в Home Assistant** — только в веб-интерфейс\n"
-            f"   - **На все мобильные устройства** — на ВСЕ телефоны с Companion App\n"
-            f"   - **Отдельные устройства** — выберите конкретные телефоны из списка ниже\n"
-            f"• **Отправлять на все устройства** - если выключить, можно выбрать конкретные\n"
+            f"• **Куда отправлять**:\n"
+            f"   - ✅ **Уведомление в Home Assistant** — в веб-интерфейс\n"
+            f"   - ✅ **Мобильные устройства** — выберите нужные телефоны из списка (можно несколько)\n"
             f"• **Показания**: отметьте, что включать в уведомление\n\n"
             f"💡 **Совет:** Включите опцию **'Отправить тестовое уведомление'** ниже и нажмите **'Подтвердить'**, "
             f"чтобы проверить текущие настройки немедленно."
-        )
-        
-        return self.async_show_form(
-            step_id="edit_notifications",
-            data_schema=schema,
-            description_placeholders={
-                "name": counter[CONF_NAME],
-                "info": info_text,
-            }
         )
