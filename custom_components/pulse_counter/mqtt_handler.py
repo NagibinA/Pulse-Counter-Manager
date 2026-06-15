@@ -93,7 +93,7 @@ class BaseMQTTHandler:
         self._last_impulses_per_minute = 0
         
         # Для накопления импульсов во время перезагрузки
-        self._pending_impulses = 0  # ← ДОБАВЛЕНО
+        self._pending_impulses = 0
         
         # Управление опросом
         self._polling_enabled = True
@@ -110,6 +110,20 @@ class BaseMQTTHandler:
         
         # Хранилище
         self.storage = PulseCounterStorage(hass, self.counter_id)
+        
+        # Настройки уведомлений
+        self.notification_enabled = False
+        self.notification_day = 24
+        self.notification_time = "19:00:00"
+        self.notification_service = "persistent_notification"
+        self.notification_show_day = True
+        self.notification_show_night = True
+        self.notification_show_total = True
+        self.notification_show_cost = True
+        self.notification_show_month = True
+        self.notification_custom_message = ""
+        self.notification_send_to_all = True
+        self.notification_target_devices = []
         
         _LOGGER.info("Инициализирован обработчик для счетчика %s (тип: %s)", self.name, self.meter_type)
 
@@ -459,8 +473,8 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
         self.current_tariff = STATE_DAY
         
         # Для накопления импульсов во время перезагрузки
-        self._pending_day_impulses = 0  # ← ДОБАВЛЕНО
-        self._pending_night_impulses = 0  # ← ДОБАВЛЕНО
+        self._pending_day_impulses = 0
+        self._pending_night_impulses = 0
         
         # Для экспорта - переопределяем топики
         if self.export_enabled:
