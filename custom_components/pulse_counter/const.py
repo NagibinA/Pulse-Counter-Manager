@@ -1,7 +1,7 @@
 """Константы для интеграции Pulse Counter Manager."""
 
 DOMAIN = "pulse_counter"
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 
 # Ссылка на официальные тарифы
 TARIFF_INFO_URL = "https://www.elec.ru/library/rd/tarify-elektroenergiya-2026/st-peterburg.html"
@@ -120,7 +120,7 @@ CONF_MONTH_START_VALUE = "month_start_value"
 CONF_MONTH_START_DAY = "month_start_day"
 CONF_MONTH_START_NIGHT = "month_start_night"
 
-# Константы для уведомлений (НОВЫЕ)
+# Константы для уведомлений
 CONF_NOTIFICATION_ENABLED = "notification_enabled"
 CONF_NOTIFICATION_DAY = "notification_day"
 CONF_NOTIFICATION_TIME = "notification_time"
@@ -132,6 +132,10 @@ CONF_NOTIFICATION_SHOW_COST = "notification_show_cost"
 CONF_NOTIFICATION_SHOW_MONTH = "notification_show_month"
 CONF_NOTIFICATION_CUSTOM_MESSAGE = "notification_custom_message"
 
+# Константы для выбора устройств
+CONF_NOTIFICATION_SEND_TO_ALL = "notification_send_to_all"
+CONF_NOTIFICATION_TARGET_DEVICES = "notification_target_devices"
+
 # Значения по умолчанию для уведомлений
 DEFAULT_NOTIFICATION_DAY = 24
 DEFAULT_NOTIFICATION_TIME = "19:00:00"
@@ -141,14 +145,12 @@ DEFAULT_NOTIFICATION_SHOW_NIGHT = True
 DEFAULT_NOTIFICATION_SHOW_TOTAL = True
 DEFAULT_NOTIFICATION_SHOW_COST = True
 DEFAULT_NOTIFICATION_SHOW_MONTH = True
+DEFAULT_NOTIFICATION_SEND_TO_ALL = True
+DEFAULT_NOTIFICATION_TARGET_DEVICES = []
 
-# Доступные сервисы уведомлений
+# Доступные сервисы уведомлений - ТОЛЬКО ПЕРВЫЙ ПУНКТ И МОБИЛЬНЫЕ
 NOTIFICATION_SERVICES = {
     "persistent_notification": "📢 Уведомление в Home Assistant",
-    "notify.persistent_notification": "📌 Постоянное уведомление",
-    "notify.mobile_app": "📱 Мобильное приложение",
-    "notify.telegram": "✈️ Telegram",
-    "notify.html5": "🌐 HTML5",
 }
 
 # Значения по умолчанию
