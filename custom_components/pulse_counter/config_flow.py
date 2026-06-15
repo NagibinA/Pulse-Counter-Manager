@@ -767,24 +767,37 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             message_lines.append(f"💬 {handler.notification_custom_message}")
         
         message = "\n".join(message_lines)
+        message_title = f"📊 {handler.name}"
         
-        # Отправляем уведомление
+        # Отправляем в зависимости от выбранного сервиса
         service = handler.notification_service
         
         if service == "persistent_notification":
             persistent_notification.async_create(
                 handler.hass,
                 message,
-                title=f"📊 {handler.name} - тестовое уведомление",
+                title=message_title,
                 notification_id=f"pulse_counter_test_{handler.counter_id}"
             )
+        elif service == "notify.notify":
+            # Отправка на ВСЕ устройства (как в Bianca)
+            await handler.hass.services.async_call(
+                "notify",
+                "notify",
+                {
+                    "title": message_title,
+                    "message": message
+                },
+                blocking=False
+            )
         elif service.startswith("notify."):
+            # Для конкретного сервиса
             service_name = service.split(".")[-1]
             await handler.hass.services.async_call(
                 "notify",
                 service_name,
                 {
-                    "title": f"📊 {handler.name}",
+                    "title": message_title,
                     "message": message
                 },
                 blocking=False
@@ -795,7 +808,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 "notify",
                 service,
                 {
-                    "title": f"📊 {handler.name}",
+                    "title": message_title,
                     "message": message
                 },
                 blocking=False
@@ -804,7 +817,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         # Подтверждение
         persistent_notification.async_create(
             handler.hass,
-            f"✅ Тестовое уведомление для **{handler.name}** отправлено в сервис `{service}`.\n\nПроверьте уведомления в соответствующем приложении.",
+            f"✅ Тестовое уведомление для **{handler.name}** отправлено в сервис `{service}`.\n\n"
+            f"📱 Если вы выбрали `notify.notify` — сообщение пришло на ВСЕ ваши устройства.",
             title="📬 Pulse Counter Manager",
             notification_id="pulse_counter_test_confirm"
         )
@@ -1427,7 +1441,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 f"Настройте автоматическую отправку показаний счетчика **{counter[CONF_NAME]}**.\n\n"
                 f"• **День месяца**: укажите число, когда нужно отправлять уведомление (например, 24)\n"
                 f"• **Время**: формат ЧЧ:ММ:СС (например, 19:00:00)\n"
-                f"• **Сервис**: выберите куда отправлять (в HA, на телефон, в Telegram)\n"
+                f"• **Сервис**: выберите куда отправлять:\n"
+                f"   - `persistent_notification` — только в веб-интерфейс\n"
+                f"   - `notify.notify` — на ВСЕ устройства (как в Bianca)\n"
+                f"   - `notify.telegram` — в Telegram (если настроен)\n"
+                f"   - `notify.html5` — в браузер\n"
                 f"• **Показания**: отметьте, что включать в уведомление\n\n"
                 f"💡 **Совет:** Включите опцию **'Отправить тестовое уведомление'** ниже и нажмите **'Подтвердить'**, "
                 f"чтобы проверить текущие настройки немедленно, не дожидаясь указанного дня месяца."
@@ -1437,7 +1455,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 f"Настройте автоматическую отправку показаний счетчика **{counter[CONF_NAME]}**.\n\n"
                 f"• **День месяца**: укажите число, когда нужно отправлять уведомление (например, 24)\n"
                 f"• **Время**: формат ЧЧ:ММ:СС (например, 19:00:00)\n"
-                f"• **Сервис**: выберите куда отправлять (в HA, на телефон, в Telegram)\n"
+                f"• **Сервис**: выберите куда отправлять:\n"
+                f"   - `persistent_notification` — только в веб-интерфейс\n"
+                f"   - `notify.notify` — на ВСЕ устройства (как в Bianca)\n"
+                f"   - `notify.telegram` — в Telegram (если настроен)\n"
+                f"   - `notify.html5` — в браузер\n"
                 f"• **Показания**: отметьте, что включать в уведомление\n\n"
                 f"💡 **Совет:** Включите опцию **'Отправить тестовое уведомление'** ниже и нажмите **'Подтвердить'**, "
                 f"чтобы проверить текущие настройки немедленно, не дожидаясь указанного дня месяца."
