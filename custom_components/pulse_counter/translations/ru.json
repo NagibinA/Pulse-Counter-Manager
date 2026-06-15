@@ -82,7 +82,9 @@
           "notification_show_total": "Общие показания",
           "notification_show_cost": "Стоимость",
           "notification_show_month": "Потребление за месяц",
-          "notification_custom_message": "Дополнительный текст"
+          "notification_custom_message": "Дополнительный текст",
+          "notification_send_to_all": "Отправлять на все устройства",
+          "notification_target_devices": "Выберите устройства"
         }
       },
       "edit_counter": {
@@ -190,6 +192,8 @@
           "notification_show_month": "Потребление за месяц",
           "notification_show_cost": "Стоимость",
           "notification_custom_message": "Дополнительный текст",
+          "notification_send_to_all": "Отправлять на все устройства",
+          "notification_target_devices": "Выберите устройства",
           "test_notification": "📨 Отправить тестовое уведомление"
         }
       }
