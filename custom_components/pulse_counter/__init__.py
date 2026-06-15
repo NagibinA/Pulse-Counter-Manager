@@ -30,6 +30,8 @@ from .const import (
     CONF_NOTIFICATION_SHOW_COST,
     CONF_NOTIFICATION_SHOW_MONTH,
     CONF_NOTIFICATION_CUSTOM_MESSAGE,
+    CONF_NOTIFICATION_SEND_TO_ALL,
+    CONF_NOTIFICATION_TARGET_DEVICES,
     DEFAULT_NOTIFICATION_DAY,
     DEFAULT_NOTIFICATION_TIME,
     DEFAULT_NOTIFICATION_SERVICE,
@@ -38,6 +40,8 @@ from .const import (
     DEFAULT_NOTIFICATION_SHOW_TOTAL,
     DEFAULT_NOTIFICATION_SHOW_COST,
     DEFAULT_NOTIFICATION_SHOW_MONTH,
+    DEFAULT_NOTIFICATION_SEND_TO_ALL,
+    DEFAULT_NOTIFICATION_TARGET_DEVICES,
 )
 
 from .mqtt_handler import (
@@ -60,7 +64,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN][CONF_COUNTERS] = {}
         hass.data[DOMAIN]["handlers"] = {}
         hass.data[DOMAIN]["polling_enabled"] = False
-        hass.data[DOMAIN]["notified_this_month"] = {}  # Для отслеживания отправленных уведомлений
+        hass.data[DOMAIN]["notified_this_month"] = {}
 
     broker = entry.data[CONF_MQTT_BROKER]
     port = entry.data[CONF_MQTT_PORT]
@@ -98,6 +102,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         handler.notification_show_cost = counter_config.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST)
         handler.notification_show_month = counter_config.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH)
         handler.notification_custom_message = counter_config.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "")
+        handler.notification_send_to_all = counter_config.get(CONF_NOTIFICATION_SEND_TO_ALL, DEFAULT_NOTIFICATION_SEND_TO_ALL)
+        handler.notification_target_devices = counter_config.get(CONF_NOTIFICATION_TARGET_DEVICES, DEFAULT_NOTIFICATION_TARGET_DEVICES)
         
         await handler.async_initialize()
         hass.data[DOMAIN]["handlers"][counter_config[CONF_COUNTER_ID]] = handler
@@ -138,6 +144,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         handler.notification_show_cost = counter_config.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST)
         handler.notification_show_month = counter_config.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH)
         handler.notification_custom_message = counter_config.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "")
+        handler.notification_send_to_all = counter_config.get(CONF_NOTIFICATION_SEND_TO_ALL, DEFAULT_NOTIFICATION_SEND_TO_ALL)
+        handler.notification_target_devices = counter_config.get(CONF_NOTIFICATION_TARGET_DEVICES, DEFAULT_NOTIFICATION_TARGET_DEVICES)
         
         await handler.async_initialize()
         hass.data[DOMAIN]["handlers"][counter_config[CONF_COUNTER_ID]] = handler
@@ -148,49 +156,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async_dispatcher_connect(hass, f"{DOMAIN}_add_counter", async_add_counter)
     )
     
-    # Функция проверки и отправки ежемесячных уведомлений
-    async def check_monthly_notifications(now):
-        """Проверяет, нужно ли отправить уведомления."""
-        current = dt_util.now()
-        current_month = current.month
-        current_day = current.day
-        current_hour = current.hour
-        current_minute = current.minute
-        
-        for counter_id, handler in hass.data[DOMAIN]["handlers"].items():
-            if not handler.notification_enabled:
-                continue
-            
-            # Парсим время из настроек
-            try:
-                time_parts = handler.notification_time.split(":")
-                target_hour = int(time_parts[0])
-                target_minute = int(time_parts[1]) if len(time_parts) > 1 else 0
-            except (ValueError, IndexError):
-                _LOGGER.warning("Неверный формат времени для %s: %s", handler.name, handler.notification_time)
-                continue
-            
-            # Проверяем день и время
-            if current_day == handler.notification_day and current_hour == target_hour and current_minute == target_minute:
-                # Проверяем, не отправляли ли уже уведомление в этом месяце
-                if not hass.data[DOMAIN]["notified_this_month"].get(counter_id, False):
-                    await send_monthly_notification(hass, handler)
-                    hass.data[DOMAIN]["notified_this_month"][counter_id] = True
-                    _LOGGER.info("Отправлено ежемесячное уведомление для %s", handler.name)
-        
-        # Сбрасываем флаги в первый день следующего месяца
-        if current_day == 1 and current_hour == 0 and current_minute == 0:
-            for counter_id in hass.data[DOMAIN]["notified_this_month"]:
-                hass.data[DOMAIN]["notified_this_month"][counter_id] = False
-    
     # Функция отправки уведомления
     async def send_monthly_notification(hass, handler):
         """Отправляет уведомление с показаниями счетчика."""
         
         message_lines = []
         
-        # Заголовок
-        message_lines.append(f"🏠 **{handler.name}**")
+        # Первая строка: "📊 Показания счетчика"
+        message_lines.append(f"📊 Показания счетчика")
+        # Вторая строка: "🏠 Электроэнергия" (или название счетчика)
+        message_lines.append(f"🏠 {handler.name}")
         message_lines.append("")
         
         # Показания в зависимости от типа счетчика
@@ -219,46 +194,140 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             message_lines.append(f"💬 {handler.notification_custom_message}")
         
         message = "\n".join(message_lines)
+        message_title = f"📊 {handler.name}"
         
-        # Отправка через выбранный сервис
+        # Получаем выбранный сервис и настройки устройств
         service = handler.notification_service
+        send_to_all = getattr(handler, 'notification_send_to_all', True)
+        target_devices = getattr(handler, 'notification_target_devices', [])
         
-        if service == "persistent_notification":
-            hass.components.persistent_notification.async_create(
-                message,
-                title=f"📊 {handler.name} - ежемесячные показания",
-                notification_id=f"pulse_counter_monthly_{handler.counter_id}"
-            )
-        elif service.startswith("notify."):
-            # Для notify сервисов
-            service_name = service.split(".")[-1] if "." in service else service
-            await hass.services.async_call(
-                "notify",
-                service_name,
-                {
-                    "title": f"📊 {handler.name}",
-                    "message": message
-                },
-                blocking=False
-            )
-        else:
-            # Попробуем как есть
-            await hass.services.async_call(
-                "notify",
-                service,
-                {
-                    "title": f"📊 {handler.name}",
-                    "message": message
-                },
-                blocking=False
-            )
+        _LOGGER.info("=" * 60)
+        _LOGGER.info("Отправка ЕЖЕМЕСЯЧНОГО уведомления для счетчика: %s", handler.name)
+        _LOGGER.info("Выбранный сервис: '%s'", service)
+        _LOGGER.info("Отправлять на все устройства: %s", send_to_all)
+        _LOGGER.info("Целевые устройства: %s", target_devices)
+        
+        try:
+            # Вариант 1: persistent_notification
+            if service == "persistent_notification":
+                _LOGGER.info("→ Отправка через persistent_notification")
+                hass.components.persistent_notification.async_create(
+                    message,
+                    title=message_title,
+                    notification_id=f"pulse_counter_monthly_{handler.counter_id}"
+                )
+                _LOGGER.info("✓ Уведомление создано в persistent_notification")
+            
+            # Вариант 2: notify.notify или конкретные мобильные устройства
+            elif service == "notify.notify" or service.startswith("notify.mobile_app_"):
+                # Ищем все мобильные устройства
+                all_services = hass.services.async_services()
+                mobile_services = []
+                
+                for service_name in all_services.get("notify", []):
+                    if service_name.startswith("mobile_app_"):
+                        mobile_services.append(f"notify.{service_name}")
+                
+                _LOGGER.info("Найдено мобильных устройств: %d", len(mobile_services))
+                
+                if not mobile_services:
+                    _LOGGER.warning("Мобильные устройства не найдены!")
+                    hass.components.persistent_notification.async_create(
+                        f"❌ Не найдено мобильных устройств с Companion App.\n\n"
+                        f"1. Убедитесь, что приложение установлено и вы вошли в аккаунт.\n"
+                        f"2. Перезагрузите Home Assistant.\n"
+                        f"3. Затем снова откройте приложение на телефоне.\n\n"
+                        f"Инструкция: https://companion.home-assistant.io/docs/getting_started/",
+                        title="📬 Pulse Counter Manager",
+                        notification_id="pulse_counter_mobile_error"
+                    )
+                    return
+                
+                # Определяем, на какие устройства отправлять
+                devices_to_send = []
+                
+                if service == "notify.notify" and send_to_all:
+                    devices_to_send = mobile_services
+                    _LOGGER.info("Режим: отправка на ВСЕ устройства")
+                elif service == "notify.notify" and not send_to_all:
+                    for device in target_devices:
+                        if device in mobile_services:
+                            devices_to_send.append(device)
+                    _LOGGER.info("Режим: отправка на ВЫБРАННЫЕ устройства: %s", devices_to_send)
+                elif service.startswith("notify.mobile_app_"):
+                    if service in mobile_services:
+                        devices_to_send = [service]
+                        _LOGGER.info("Режим: отправка на КОНКРЕТНОЕ устройство: %s", service)
+                
+                if not devices_to_send:
+                    _LOGGER.warning("Нет устройств для отправки")
+                    return
+                
+                for mobile_service_name in devices_to_send:
+                    _LOGGER.info("→ Отправка на устройство: %s", mobile_service_name)
+                    await hass.services.async_call(
+                        "notify",
+                        mobile_service_name.replace("notify.", ""),
+                        {
+                            "title": message_title,
+                            "message": message
+                        },
+                        blocking=False
+                    )
+                _LOGGER.info("✓ Отправлено на %d устройств", len(devices_to_send))
+            
+            _LOGGER.info("✅ Ежемесячное уведомление для %s успешно отправлено", handler.name)
+            _LOGGER.info("=" * 60)
+            
+        except Exception as e:
+            _LOGGER.error("❌ ОШИБКА отправки ежемесячного уведомления для %s: %s", handler.name, e)
+            _LOGGER.error("=" * 60)
     
-    # Запускаем проверку уведомлений каждую минуту
-    async_track_time_interval(hass, check_monthly_notifications, timedelta(minutes=1))
+    # Функция проверки и отправки ежемесячных уведомлений
+    async def check_monthly_notifications(now):
+        """Проверяет, нужно ли отправить уведомления."""
+        current = dt_util.now()
+        current_day = current.day
+        current_hour = current.hour
+        current_minute = current.minute
+        current_second = current.second
+        
+        for counter_id, handler in hass.data[DOMAIN]["handlers"].items():
+            if not handler.notification_enabled:
+                continue
+            
+            # Парсим время из настроек
+            try:
+                time_parts = handler.notification_time.split(":")
+                target_hour = int(time_parts[0])
+                target_minute = int(time_parts[1]) if len(time_parts) > 1 else 0
+                target_second = int(time_parts[2]) if len(time_parts) > 2 else 0
+            except (ValueError, IndexError):
+                _LOGGER.warning("Неверный формат времени для %s: %s", handler.name, handler.notification_time)
+                continue
+            
+            # Проверяем день и время
+            time_match = (current_hour == target_hour and 
+                         current_minute == target_minute and 
+                         current_second == target_second)
+            
+            if current_day == handler.notification_day and time_match:
+                if not hass.data[DOMAIN]["notified_this_month"].get(counter_id, False):
+                    _LOGGER.info("Наступило время отправки уведомления для %s", handler.name)
+                    await send_monthly_notification(hass, handler)
+                    hass.data[DOMAIN]["notified_this_month"][counter_id] = True
+        
+        # Сбрасываем флаги в первый день следующего месяца
+        if current_day == 1 and current_hour == 0 and current_minute == 0 and current_second == 0:
+            for counter_id in hass.data[DOMAIN]["notified_this_month"]:
+                hass.data[DOMAIN]["notified_this_month"][counter_id] = False
+            _LOGGER.info("Флаги уведомлений сброшены")
+    
+    # Запускаем проверку уведомлений каждые 30 секунд
+    async_track_time_interval(hass, check_monthly_notifications, timedelta(seconds=30))
     
     # Обработчик остановки HA
     async def handle_ha_stop(event):
-        """При остановке HA останавливаем опрос ESP."""
         _LOGGER.info("Остановка Home Assistant, прекращение опроса ESP")
         hass.data[DOMAIN]["polling_enabled"] = False
         for handler in hass.data[DOMAIN]["handlers"].values():
@@ -268,17 +337,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Обработчик запуска HA
     async def handle_ha_start(event):
-        """При запуске HA возобновляем опрос ESP."""
         _LOGGER.info("Запуск Home Assistant, возобновление опроса ESP")
         hass.data[DOMAIN]["polling_enabled"] = True
         for handler in hass.data[DOMAIN]["handlers"].values():
             await handler.async_start_polling()
         _LOGGER.info("Опрос всех счетчиков возобновлен")
     
-    # Регистрируем обработчики событий
     hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, handle_ha_stop)
     
-    # Если HA уже запущен, запускаем опрос сразу, иначе ждем события старта
     if hass.state == CoreState.running:
         await handle_ha_start(None)
     else:
@@ -295,7 +361,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     _LOGGER.info("Выгрузка Pulse Counter Manager")
     
-    # Останавливаем все обработчики
     for handler_id, handler in hass.data[DOMAIN]["handlers"].items():
         await handler.async_shutdown()
     
