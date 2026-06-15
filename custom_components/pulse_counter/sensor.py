@@ -224,7 +224,7 @@ class PulseCounterMonthTotalCostSensor(PulseCounterBaseSensor):
     def __init__(self, handler):
         super().__init__(handler)
         self._attr_unique_id = f"{handler.counter_id}_month_total_cost"
-        self._attr_name = f"{handler.name} Стоимость электричества за месяц"
+        self._attr_name = f"{handler.name} Показания счетчика"
         self._attr_native_unit_of_measurement = UNIT_RUB
         self._attr_device_class = "monetary"
         self._attr_state_class = "total"
