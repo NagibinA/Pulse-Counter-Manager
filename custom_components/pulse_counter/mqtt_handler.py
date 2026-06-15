@@ -93,7 +93,7 @@ class BaseMQTTHandler:
         self._last_impulses_per_minute = 0
         
         # Для накопления импульсов во время перезагрузки
-        self._pending_impulses = 0
+        self._pending_impulses = 0  # ← ДОБАВЛЕНО
         
         # Управление опросом
         self._polling_enabled = True
@@ -111,34 +111,15 @@ class BaseMQTTHandler:
         # Хранилище
         self.storage = PulseCounterStorage(hass, self.counter_id)
         
-        # Настройки уведомлений
-        self.notification_enabled = False
-        self.notification_day = 24
-        self.notification_time = "19:00:00"
-        self.notification_show_day = True
-        self.notification_show_night = True
-        self.notification_show_total = True
-        self.notification_show_cost = True
-        self.notification_show_month = True
-        self.notification_show_custom_message = False
-        self.notification_custom_message = ""
-        self.notification_send_to_ha = True
-        self.notification_target_devices = []
-        
         _LOGGER.info("Инициализирован обработчик для счетчика %s (тип: %s)", self.name, self.meter_type)
 
     def async_add_listener(self, update_callback):
-        """Добавить слушателя обновлений."""
         self._listeners.append(update_callback)
         return lambda: self._listeners.remove(update_callback)
 
     async def _notify_listeners(self):
-        """Уведомить всех слушателей об изменении состояния."""
         for listener in self._listeners:
-            try:
-                listener()
-            except Exception as e:
-                _LOGGER.error("Ошибка при уведомлении слушателя для %s: %s", self.name, e)
+            listener()
 
     async def _load_state(self):
         """Загрузить состояние из хранилища."""
@@ -234,7 +215,6 @@ class BaseMQTTHandler:
         _LOGGER.info("Возобновлен опрос ESP для %s", self.name)
 
     async def _connect_mqtt(self):
-        """Подключение к основному MQTT брокеру."""
         self._client = mqtt.Client()
         self._client.on_connect = self._on_connect
         self._client.on_message = self._on_message
@@ -280,7 +260,6 @@ class BaseMQTTHandler:
             self._export_client = None
 
     def _on_connect(self, client, userdata, flags, rc):
-        """Callback при подключении к MQTT."""
         if rc == 0:
             _LOGGER.info("Подключен к MQTT брокеру %s:%s для счетчика %s", self.broker, self.port, self.name)
             self._subscribe_topics()
@@ -295,8 +274,27 @@ class BaseMQTTHandler:
         pass
 
     def _on_message(self, client, userdata, msg):
-        """Обработка входящих MQTT сообщений - переопределяется в дочерних классах."""
-        pass
+        topic = msg.topic
+        payload = msg.payload.decode() if isinstance(msg.payload, bytes) else msg.payload
+        
+        if topic == self.topic_available:
+            self.esp_available = (payload == "Включен")
+            _LOGGER.info("Статус счетчика %s: %s", self.name, "доступен" if self.esp_available else "недоступен")
+            return
+        
+        # Обработка импульсов для однотарифных счетчиков
+        if hasattr(self, 'topic_main') and topic == self.topic_main:
+            try:
+                impulses = int(payload)
+                self._last_impulses_raw = impulses
+                if not self._is_shutdown and self._polling_enabled:
+                    self.hass.loop.create_task(self._process_impulses(impulses))
+                elif not self._polling_enabled:
+                    self._pending_impulses += impulses
+                    _LOGGER.debug("Импульсы добавлены в буфер: %d (всего в буфере: %d)", 
+                                 impulses, self._pending_impulses)
+            except ValueError:
+                _LOGGER.error("Ошибка преобразования: %s", payload)
 
     async def _process_impulses(self, impulses: int):
         """Обработка импульсов - ВСЕГДА прибавляем."""
@@ -321,7 +319,6 @@ class BaseMQTTHandler:
         await self._notify_listeners()
 
     def _schedule_impulses_update(self):
-        """Запланировать обновление счетчика импульсов."""
         async def _update(now):
             await self._update_impulses_per_minute()
         async_track_time_change(self.hass, _update, second=5)
@@ -345,14 +342,12 @@ class BaseMQTTHandler:
 
     # Методы для корректировки
     async def async_set_total_value(self, value: float):
-        """Установить общее значение счетчика."""
         self._total_value = value
         await self._save_state()
         await self._notify_listeners()
         _LOGGER.info("Установлены показания для %s: %.1f %s", self.name, value, self.unit)
 
     async def async_set_month_start_value(self, value: float):
-        """Установить показания на начало месяца."""
         self._month_start_value = value
         await self._save_state()
         await self._notify_listeners()
@@ -368,23 +363,19 @@ class BaseMQTTHandler:
     # Свойства
     @property
     def total_value(self) -> float:
-        """Общее значение счетчика."""
         return self._total_value
 
     @property
     def month_value(self) -> float:
-        """Потребление за месяц."""
         consumption = self._total_value - self._month_start_value
         return round(consumption, 2) if consumption > 0 else 0
 
     @property
     def current_raw_impulses(self) -> int:
-        """Текущее количество импульсов за минуту."""
         return self._last_impulses_per_minute
 
     @property
     def partial(self) -> int:
-        """Накопленные импульсы."""
         return self._partial
 
 
@@ -400,12 +391,10 @@ class PulseCounterWaterMQTTHandler(BaseMQTTHandler):
         _LOGGER.info("Топик для %s: %s", self.name, self.topic_main)
 
     def _subscribe_topics(self):
-        """Подписка на топики для воды."""
         if self.topic_main:
             self._client.subscribe(self.topic_main)
 
     def _on_message(self, client, userdata, msg):
-        """Обработка входящих MQTT сообщений для воды."""
         topic = msg.topic
         payload = msg.payload.decode() if isinstance(msg.payload, bytes) else msg.payload
         
@@ -427,11 +416,10 @@ class PulseCounterWaterMQTTHandler(BaseMQTTHandler):
 
     @property
     def month_cost(self) -> float:
-        """Стоимость за месяц."""
         return round(self.month_value * self.tariff, 2)
 
 
-# Для газа и тепла - используем тот же класс
+# Для газа и тепла - пока используем тот же класс
 PulseCounterGasMQTTHandler = PulseCounterWaterMQTTHandler
 PulseCounterHeatMQTTHandler = PulseCounterWaterMQTTHandler
 
@@ -471,8 +459,8 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
         self.current_tariff = STATE_DAY
         
         # Для накопления импульсов во время перезагрузки
-        self._pending_day_impulses = 0
-        self._pending_night_impulses = 0
+        self._pending_day_impulses = 0  # ← ДОБАВЛЕНО
+        self._pending_night_impulses = 0  # ← ДОБАВЛЕНО
         
         # Для экспорта - переопределяем топики
         if self.export_enabled:
@@ -531,19 +519,16 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
         await self._save_state()
 
     def _subscribe_topics(self):
-        """Подписка на топики для электроэнергии."""
         self._client.subscribe(self.topic_day)
         self._client.subscribe(self.topic_night)
         self._client.subscribe(self.topic_command)
 
     async def async_initialize(self):
-        """Инициализация обработчика для электроэнергии."""
         await super().async_initialize()
         await self._update_current_tariff()
         self._schedule_tariff_switching()
 
     def _on_message(self, client, userdata, msg):
-        """Обработка входящих MQTT сообщений для электроэнергии."""
         topic = msg.topic
         payload = msg.payload.decode() if isinstance(msg.payload, bytes) else msg.payload
         
@@ -608,7 +593,6 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
         await self._notify_listeners()
 
     async def _update_current_tariff(self):
-        """Обновление текущего тарифа и отправка команды на ESP."""
         if not self._polling_enabled:
             _LOGGER.debug("Опрос остановлен, команда не отправлена для %s", self.name)
             return
@@ -631,7 +615,6 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
         await self._send_command(self.current_tariff)
 
     async def _send_command(self, command: str):
-        """Отправка команды на ESP."""
         if not self.esp_available:
             return
         if self._client:
@@ -648,7 +631,6 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
             _LOGGER.info("Отправлена команда регулировки порога: %s для счетчика %s", command, self.name)
 
     def _schedule_tariff_switching(self):
-        """Запланировать переключение тарифов."""
         async def _check_tariff(now):
             await self._update_current_tariff()
         async_track_time_change(self.hass, _check_tariff, second=0)
@@ -667,28 +649,24 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
 
     # Методы для корректировки
     async def async_set_day_kwh(self, value: float):
-        """Установить дневные показания."""
         self._day_total_kwh = value
         await self._save_state()
         await self._notify_listeners()
         _LOGGER.info("Установлены дневные показания для %s: %.1f кВт·ч", self.name, value)
 
     async def async_set_night_kwh(self, value: float):
-        """Установить ночные показания."""
         self._night_total_kwh = value
         await self._save_state()
         await self._notify_listeners()
         _LOGGER.info("Установлены ночные показания для %s: %.1f кВт·ч", self.name, value)
 
     async def async_set_month_start_day(self, value: float):
-        """Установить дневные показания на начало месяца."""
         self._month_start_day = value
         await self._save_state()
         await self._notify_listeners()
         _LOGGER.info("Установлено начало месяца (день) для %s: %.1f кВт·ч", self.name, value)
 
     async def async_set_month_start_night(self, value: float):
-        """Установить ночные показания на начало месяца."""
         self._month_start_night = value
         await self._save_state()
         await self._notify_listeners()
@@ -719,62 +697,50 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
     # Свойства
     @property
     def total_value(self) -> float:
-        """Общее значение счетчика (день+ночь)."""
         return self._day_total_kwh + self._night_total_kwh
 
     @property
     def day_kwh(self) -> float:
-        """Дневные показания."""
         return self._day_total_kwh
 
     @property
     def night_kwh(self) -> float:
-        """Ночные показания."""
         return self._night_total_kwh
 
     @property
     def day_partial_impulses(self) -> int:
-        """Накопленные дневные импульсы."""
         return self._day_partial
 
     @property
     def night_partial_impulses(self) -> int:
-        """Накопленные ночные импульсы."""
         return self._night_partial
 
     @property
     def month_value(self) -> float:
-        """Общее потребление за месяц."""
         return self.month_day_kwh + self.month_night_kwh
 
     @property
     def month_day_kwh(self) -> float:
-        """Дневное потребление за месяц."""
         consumption = self._day_total_kwh - self._month_start_day
         return round(consumption, 2) if consumption > 0 else 0
 
     @property
     def month_night_kwh(self) -> float:
-        """Ночное потребление за месяц."""
         consumption = self._night_total_kwh - self._month_start_night
         return round(consumption, 2) if consumption > 0 else 0
 
     @property
     def month_day_cost(self) -> float:
-        """Стоимость дневного потребления за месяц."""
         return round(self.month_day_kwh * self.day_tariff, 2)
 
     @property
     def month_night_cost(self) -> float:
-        """Стоимость ночного потребления за месяц."""
         return round(self.month_night_kwh * self.night_tariff, 2)
 
     @property
     def month_total_kwh(self) -> float:
-        """Общее потребление за месяц в кВт·ч."""
         return round(self.month_day_kwh + self.month_night_kwh, 2)
 
     @property
     def month_total_cost(self) -> float:
-        """Общая стоимость за месяц."""
         return round(self.month_day_cost + self.month_night_cost, 2)

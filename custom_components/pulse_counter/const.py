@@ -1,7 +1,7 @@
 """Константы для интеграции Pulse Counter Manager."""
 
 DOMAIN = "pulse_counter"
-VERSION = "1.5.2"
+VERSION = "1.5.0"
 
 # Ссылка на официальные тарифы
 TARIFF_INFO_URL = "https://www.elec.ru/library/rd/tarify-elektroenergiya-2026/st-peterburg.html"
@@ -120,31 +120,36 @@ CONF_MONTH_START_VALUE = "month_start_value"
 CONF_MONTH_START_DAY = "month_start_day"
 CONF_MONTH_START_NIGHT = "month_start_night"
 
-# Константы для уведомлений
+# Константы для уведомлений (НОВЫЕ)
 CONF_NOTIFICATION_ENABLED = "notification_enabled"
 CONF_NOTIFICATION_DAY = "notification_day"
 CONF_NOTIFICATION_TIME = "notification_time"
+CONF_NOTIFICATION_SERVICE = "notification_service"
 CONF_NOTIFICATION_SHOW_DAY = "notification_show_day"
 CONF_NOTIFICATION_SHOW_NIGHT = "notification_show_night"
 CONF_NOTIFICATION_SHOW_TOTAL = "notification_show_total"
 CONF_NOTIFICATION_SHOW_COST = "notification_show_cost"
 CONF_NOTIFICATION_SHOW_MONTH = "notification_show_month"
-CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE = "notification_show_custom_message"
 CONF_NOTIFICATION_CUSTOM_MESSAGE = "notification_custom_message"
-CONF_NOTIFICATION_TARGET_DEVICES = "notification_target_devices"
-CONF_NOTIFICATION_SEND_TO_HA = "notification_send_to_ha"
 
 # Значения по умолчанию для уведомлений
 DEFAULT_NOTIFICATION_DAY = 24
 DEFAULT_NOTIFICATION_TIME = "19:00:00"
+DEFAULT_NOTIFICATION_SERVICE = "persistent_notification"
 DEFAULT_NOTIFICATION_SHOW_DAY = True
 DEFAULT_NOTIFICATION_SHOW_NIGHT = True
 DEFAULT_NOTIFICATION_SHOW_TOTAL = True
 DEFAULT_NOTIFICATION_SHOW_COST = True
 DEFAULT_NOTIFICATION_SHOW_MONTH = True
-DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE = False
-DEFAULT_NOTIFICATION_TARGET_DEVICES = []
-DEFAULT_NOTIFICATION_SEND_TO_HA = True
+
+# Доступные сервисы уведомлений
+NOTIFICATION_SERVICES = {
+    "persistent_notification": "📢 Уведомление в Home Assistant",
+    "notify.persistent_notification": "📌 Постоянное уведомление",
+    "notify.mobile_app": "📱 Мобильное приложение",
+    "notify.telegram": "✈️ Telegram",
+    "notify.html5": "🌐 HTML5",
+}
 
 # Значения по умолчанию
 DEFAULT_DAY_TARIFF = 8.10
