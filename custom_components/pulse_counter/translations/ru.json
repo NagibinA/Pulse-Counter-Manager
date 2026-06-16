@@ -2,13 +2,14 @@
   "title": "Pulse Counter Manager",
   "config": {
     "abort": {
-      "already_configured": "Устройство уже настроено"
+      "already_configured": "Устройство уже настроено",
+      "broker_already_configured": "MQTT брокер уже настроен. Используйте опции для добавления счетчиков."
     },
     "error": {
       "cannot_connect": "Не удалось подключиться к MQTT брокеру",
       "invalid_data": "Неверные данные",
       "name_exists": "Счетчик с таким именем уже существует",
-      "invalid_time_format": "Неверный формат времени. Используйте ЧЧ:ММ (например, 23:00)",
+      "invalid_time_format": "Неверный формат времени. Используйте ЧЧ:ММ (например, 19:00)",
       "tariff_negative": "Тариф не может быть отрицательным",
       "pulses_positive": "Количество импульсов должно быть больше 0",
       "invalid_port": "Порт должен быть в диапазоне 1-65535",
@@ -28,6 +29,14 @@
     }
   },
   "options": {
+    "error": {
+      "invalid_time_format": "Неверный формат времени. Используйте ЧЧ:ММ (например, 19:00)",
+      "invalid_day": "День месяца должен быть в диапазоне 1-31",
+      "tariff_negative": "Тариф не может быть отрицательным",
+      "pulses_positive": "Количество импульсов должно быть больше 0",
+      "invalid_port": "Порт должен быть в диапазоне 1-65535",
+      "name_exists": "Счетчик с таким именем уже существует"
+    },
     "step": {
       "init": {
         "title": "Управление счетчиками",
@@ -76,13 +85,16 @@
           "notification_enabled": "Включить уведомления",
           "notification_day": "День месяца",
           "notification_time": "Время отправки",
-          "notification_service": "Сервис уведомлений",
+          "notification_service": "Сервисы уведомлений (можно выбрать несколько)",
           "notification_show_day": "Показывать дневные показания",
           "notification_show_night": "Показывать ночные показания",
           "notification_show_total": "Показывать общие показания",
           "notification_show_cost": "Показывать стоимость",
           "notification_show_month": "Показывать потребление за месяц",
-          "notification_custom_message": "Дополнительный текст"
+          "notification_custom_message": "Дополнительный текст",
+          "notification_show_custom_message": "Показывать дополнительный текст",
+          "notification_send_to_ha": "Отправлять в Home Assistant",
+          "notification_target_devices": "Мобильные устройства"
         }
       },
       "edit_counter": {
@@ -183,13 +195,16 @@
           "notification_enabled": "Включить ежемесячные уведомления",
           "notification_day": "День месяца",
           "notification_time": "Время отправки",
-          "notification_service": "Сервис уведомлений",
+          "notification_send_to_ha": "Отправлять в Home Assistant",
+          "notification_target_devices": "Мобильные устройства",
           "notification_show_day": "Дневные показания",
           "notification_show_night": "Ночные показания",
           "notification_show_total": "Общие показания",
           "notification_show_month": "Потребление за месяц",
           "notification_show_cost": "Стоимость",
-          "notification_custom_message": "Дополнительный текст"
+          "notification_custom_message": "Дополнительный текст",
+          "notification_show_custom_message": "Показывать дополнительный текст",
+          "test_notification": "Отправить тестовое уведомление"
         }
       }
     }
