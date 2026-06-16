@@ -54,9 +54,10 @@
       },
       "add_counter": {
         "title": "Добавление счетчика",
-        "description": "{section1_title}\n\n{section2_title}\n\n{section3_title}\n\n{section4_title}\n\n{section5_title}\n\n{section6_title}\n\n{section7_title}",
+        "description": "{section1_title}\n\n{section1_1_title}\n\n{section2_title}\n\n{section3_title}\n\n{section4_title}\n\n{section5_title}\n\n{section6_title}\n\n{section7_title}",
         "data": {
           "name": "Название счетчика",
+          "unit": "Единица измерения",
           "topic_day": "MQTT топик (день)",
           "topic_night": "MQTT топик (ночь)",
           "topic_main": "MQTT топик",
@@ -85,7 +86,6 @@
           "notification_enabled": "Включить уведомления",
           "notification_day": "День месяца",
           "notification_time": "Время отправки",
-          "notification_service": "Сервисы уведомлений (можно выбрать несколько)",
           "notification_show_day": "Показывать дневные показания",
           "notification_show_night": "Показывать ночные показания",
           "notification_show_total": "Показывать общие показания",
