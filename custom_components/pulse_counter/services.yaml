@@ -61,11 +61,3 @@ test_notification:
   target:
     entity:
       integration: pulse_counter
-  fields:
-    service:
-      name: Сервис уведомлений
-      description: Куда отправить тестовое уведомление
-      required: false
-      default: "persistent_notification"
-      selector:
-        text:

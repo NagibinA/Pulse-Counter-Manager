@@ -92,9 +92,6 @@ class BaseMQTTHandler:
         self._last_impulses_raw = 0
         self._last_impulses_per_minute = 0
         
-        # Для накопления импульсов во время перезагрузки
-        self._pending_impulses = 0  # ← ДОБАВЛЕНО
-        
         # Управление опросом
         self._polling_enabled = True
         self._subscribed = False
@@ -172,12 +169,7 @@ class BaseMQTTHandler:
         timeout = 0
         while not self._subscribed and timeout < 50:
             await asyncio.sleep(0.1)
-            timeout += 0.1
-        
-        # Обрабатываем накопленные во время перезагрузки импульсы
-        if self._pending_impulses > 0:
-            await self._process_impulses(self._pending_impulses)
-            self._pending_impulses = 0
+            timeout += 1
         
         # Запускаем фоновые задачи
         self._schedule_impulses_update()
@@ -287,17 +279,13 @@ class BaseMQTTHandler:
             try:
                 impulses = int(payload)
                 self._last_impulses_raw = impulses
-                if not self._is_shutdown and self._polling_enabled:
+                if not self._is_shutdown:
                     self.hass.loop.create_task(self._process_impulses(impulses))
-                elif not self._polling_enabled:
-                    self._pending_impulses += impulses
-                    _LOGGER.debug("Импульсы добавлены в буфер: %d (всего в буфере: %d)", 
-                                 impulses, self._pending_impulses)
             except ValueError:
                 _LOGGER.error("Ошибка преобразования: %s", payload)
 
     async def _process_impulses(self, impulses: int):
-        """Обработка импульсов - ВСЕГДА прибавляем."""
+        """Обработка импульсов."""
         self._partial += impulses
         if self._partial >= self.pulses_per_unit:
             units_added = self._partial // self.pulses_per_unit
@@ -379,8 +367,8 @@ class BaseMQTTHandler:
         return self._partial
 
 
-class PulseCounterWaterMQTTHandler(BaseMQTTHandler):
-    """Обработчик для счетчика воды."""
+class PulseCounterUtilityMQTTHandler(BaseMQTTHandler):
+    """Универсальный обработчик для воды, газа, тепла."""
 
     def __init__(self, hass: HomeAssistant, broker: str, port: int, username: str, password: str, config: dict):
         super().__init__(hass, broker, port, username, password, config)
@@ -407,21 +395,14 @@ class PulseCounterWaterMQTTHandler(BaseMQTTHandler):
             try:
                 impulses = int(payload)
                 self._last_impulses_raw = impulses
-                if not self._is_shutdown and self._polling_enabled:
+                if not self._is_shutdown:
                     self.hass.loop.create_task(self._process_impulses(impulses))
-                elif not self._polling_enabled:
-                    self._pending_impulses += impulses
             except ValueError:
                 _LOGGER.error("Ошибка преобразования: %s", payload)
 
     @property
     def month_cost(self) -> float:
         return round(self.month_value * self.tariff, 2)
-
-
-# Для газа и тепла - пока используем тот же класс
-PulseCounterGasMQTTHandler = PulseCounterWaterMQTTHandler
-PulseCounterHeatMQTTHandler = PulseCounterWaterMQTTHandler
 
 
 class PulseCounterMQTTHandler(BaseMQTTHandler):
@@ -457,10 +438,6 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
         
         # Текущий тариф
         self.current_tariff = STATE_DAY
-        
-        # Для накопления импульсов во время перезагрузки
-        self._pending_day_impulses = 0  # ← ДОБАВЛЕНО
-        self._pending_night_impulses = 0  # ← ДОБАВЛЕНО
         
         # Для экспорта - переопределяем топики
         if self.export_enabled:
@@ -541,29 +518,21 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
             try:
                 impulses = int(payload)
                 self._last_impulses_raw = impulses
-                if not self._is_shutdown and self._polling_enabled:
+                if not self._is_shutdown:
                     self.hass.loop.create_task(self._process_day_impulses(impulses))
-                elif not self._polling_enabled:
-                    self._pending_day_impulses += impulses
-                    _LOGGER.debug("Дневные импульсы добавлены в буфер: %d (всего: %d)", 
-                                 impulses, self._pending_day_impulses)
             except ValueError:
                 _LOGGER.error("Ошибка преобразования: %s", payload)
         elif topic == self.topic_night:
             try:
                 impulses = int(payload)
                 self._last_impulses_raw = impulses
-                if not self._is_shutdown and self._polling_enabled:
+                if not self._is_shutdown:
                     self.hass.loop.create_task(self._process_night_impulses(impulses))
-                elif not self._polling_enabled:
-                    self._pending_night_impulses += impulses
-                    _LOGGER.debug("Ночные импульсы добавлены в буфер: %d (всего: %d)", 
-                                 impulses, self._pending_night_impulses)
             except ValueError:
                 _LOGGER.error("Ошибка преобразования: %s", payload)
 
     async def _process_day_impulses(self, impulses: int):
-        """Обработка дневных импульсов - ВСЕГДА прибавляем."""
+        """Обработка дневных импульсов."""
         self._day_partial += impulses
         if self._day_partial >= self.pulses_per_unit:
             units_added = self._day_partial // self.pulses_per_unit
@@ -578,7 +547,7 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
         await self._notify_listeners()
 
     async def _process_night_impulses(self, impulses: int):
-        """Обработка ночных импульсов - ВСЕГДА прибавляем."""
+        """Обработка ночных импульсов."""
         self._night_partial += impulses
         if self._night_partial >= self.pulses_per_unit:
             units_added = self._night_partial // self.pulses_per_unit
@@ -647,6 +616,13 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
         except Exception as e:
             _LOGGER.error("Ошибка отправки экспортных показаний для %s: %s", self.name, e)
 
+    def _schedule_export_updates(self):
+        """Запланировать отправку экспортных показаний."""
+        async def _send_export(now):
+            await self._send_export_value()
+        async_track_time_change(self.hass, _send_export, minute=range(0, 60), second=0)
+        _LOGGER.debug("Запланирована отправка экспортных показаний для %s", self.name)
+
     # Методы для корректировки
     async def async_set_day_kwh(self, value: float):
         self._day_total_kwh = value
@@ -685,14 +661,6 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
         await self._save_state()
         await self._notify_listeners()
         _LOGGER.info("Установлены ночные накопленные импульсы для %s: %d", self.name, value)
-
-    async def async_clear_pending(self):
-        """Очистить буфер накопленных во время перезагрузки импульсов."""
-        if self._pending_day_impulses > 0 or self._pending_night_impulses > 0:
-            _LOGGER.info("Очистка буфера для %s: день=%d, ночь=%d", 
-                        self.name, self._pending_day_impulses, self._pending_night_impulses)
-            self._pending_day_impulses = 0
-            self._pending_night_impulses = 0
 
     # Свойства
     @property
