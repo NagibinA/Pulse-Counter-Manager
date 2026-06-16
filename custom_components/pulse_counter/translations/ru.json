@@ -54,7 +54,6 @@
       },
       "add_counter": {
         "title": "Добавление счетчика",
-        "description": "{section1_title}\n\n{section1_1_title}\n\n{section2_title}\n\n{section3_title}\n\n{section4_title}\n\n{section5_title}\n\n{section6_title}\n\n{section7_title}",
         "data": {
           "name": "Название счетчика",
           "unit": "Единица измерения",
