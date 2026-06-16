@@ -28,6 +28,7 @@ METER_DEFAULTS = {
     METER_TYPE_ELECTRICITY: {
         "name": "Электроэнергия",
         "unit": "kWh",
+        "unit_options": ["kWh"],
         "unit_cost": "руб/kWh",
         "pulses_per_unit": 1000,
         "has_tariffs": True,
@@ -43,6 +44,7 @@ METER_DEFAULTS = {
     METER_TYPE_WATER: {
         "name": "Вода",
         "unit": "m³",
+        "unit_options": ["m³", "л"],
         "unit_cost": "руб/m³",
         "pulses_per_unit": 100,
         "has_tariffs": False,
@@ -57,6 +59,7 @@ METER_DEFAULTS = {
     METER_TYPE_GAS: {
         "name": "Газ",
         "unit": "m³",
+        "unit_options": ["m³"],
         "unit_cost": "руб/m³",
         "pulses_per_unit": 10,
         "has_tariffs": False,
@@ -71,6 +74,7 @@ METER_DEFAULTS = {
     METER_TYPE_HEAT: {
         "name": "Тепло",
         "unit": "Gcal",
+        "unit_options": ["Gcal"],
         "unit_cost": "руб/Gcal",
         "pulses_per_unit": 1000,
         "has_tariffs": False,
@@ -124,7 +128,6 @@ CONF_MONTH_START_NIGHT = "month_start_night"
 CONF_NOTIFICATION_ENABLED = "notification_enabled"
 CONF_NOTIFICATION_DAY = "notification_day"
 CONF_NOTIFICATION_TIME = "notification_time"
-CONF_NOTIFICATION_SERVICE = "notification_service"
 CONF_NOTIFICATION_SHOW_DAY = "notification_show_day"
 CONF_NOTIFICATION_SHOW_NIGHT = "notification_show_night"
 CONF_NOTIFICATION_SHOW_TOTAL = "notification_show_total"
@@ -138,7 +141,6 @@ CONF_NOTIFICATION_SEND_TO_HA = "notification_send_to_ha"
 # Значения по умолчанию для уведомлений
 DEFAULT_NOTIFICATION_DAY = 24
 DEFAULT_NOTIFICATION_TIME = "19:00"
-DEFAULT_NOTIFICATION_SERVICE = "persistent_notification"
 DEFAULT_NOTIFICATION_SHOW_DAY = True
 DEFAULT_NOTIFICATION_SHOW_NIGHT = True
 DEFAULT_NOTIFICATION_SHOW_TOTAL = True
@@ -147,15 +149,6 @@ DEFAULT_NOTIFICATION_SHOW_MONTH = True
 DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE = True
 DEFAULT_NOTIFICATION_TARGET_DEVICES = []
 DEFAULT_NOTIFICATION_SEND_TO_HA = True
-
-# Доступные сервисы уведомлений
-NOTIFICATION_SERVICES = {
-    "persistent_notification": "📢 Уведомление в Home Assistant",
-    "notify.persistent_notification": "📌 Постоянное уведомление",
-    "notify.mobile_app": "📱 Мобильное приложение",
-    "notify.telegram": "✈️ Telegram",
-    "notify.html5": "🌐 HTML5",
-}
 
 # Значения по умолчанию
 DEFAULT_DAY_TARIFF = 8.10
@@ -185,6 +178,7 @@ STATE_NIGHT = "night"
 UNIT_RUB = "руб"
 UNIT_KWH = "kWh"
 UNIT_M3 = "m³"
+UNIT_LITER = "л"
 UNIT_GCAL = "Gcal"
 UNIT_IMPULSE = "имп"
 

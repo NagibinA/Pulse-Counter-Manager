@@ -197,7 +197,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             message_lines.append(f"⏰ {time.strftime('%H:%M:%S')}")
         
         message = "\n".join(message_lines)
-        message_title = f"📊 {handler.name}"
+        message_title = "📊 Показания счетчика"
         
         # Для ежемесячных уведомлений - фиксированный ID, для тестовых - уникальный
         if is_test:

@@ -62,7 +62,6 @@ from .const import (
     CONF_NOTIFICATION_ENABLED,
     CONF_NOTIFICATION_DAY,
     CONF_NOTIFICATION_TIME,
-    CONF_NOTIFICATION_SERVICE,
     CONF_NOTIFICATION_SHOW_DAY,
     CONF_NOTIFICATION_SHOW_NIGHT,
     CONF_NOTIFICATION_SHOW_TOTAL,
@@ -90,7 +89,6 @@ from .const import (
     DEFAULT_EXPORT_BROKER_MODE,
     DEFAULT_NOTIFICATION_DAY,
     DEFAULT_NOTIFICATION_TIME,
-    DEFAULT_NOTIFICATION_SERVICE,
     DEFAULT_NOTIFICATION_SHOW_DAY,
     DEFAULT_NOTIFICATION_SHOW_NIGHT,
     DEFAULT_NOTIFICATION_SHOW_TOTAL,
@@ -99,7 +97,6 @@ from .const import (
     DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE,
     DEFAULT_NOTIFICATION_TARGET_DEVICES,
     DEFAULT_NOTIFICATION_SEND_TO_HA,
-    NOTIFICATION_SERVICES,
 )
 
 from .storage import PulseCounterStorage
@@ -362,7 +359,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                             CONF_COUNTER_ID: counter_id,
                             CONF_NAME: counter_name,
                             CONF_METER_TYPE: self._meter_type,
-                            CONF_UNIT: defaults["unit"],
+                            CONF_UNIT: user_input.get(CONF_UNIT, defaults["unit"]),
                             CONF_PULSES_PER_UNIT: user_input.get(CONF_PULSES_PER_UNIT, defaults["pulses_per_unit"]),
                             CONF_INITIAL_VALUE: user_input.get(CONF_INITIAL_VALUE, 0),
                             CONF_MONTH_START_VALUE: user_input.get(CONF_MONTH_START_VALUE, 0),
@@ -553,6 +550,12 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         # === Секция 1: Основные параметры ===
         schema_dict[vol.Required(CONF_NAME, default=user_input.get(CONF_NAME, "") if user_input else "")] = str
         
+        # === Секция 1.1: Единицы измерения (только для воды) ===
+        if self._meter_type == METER_TYPE_WATER:
+            unit_options = {unit: unit for unit in defaults["unit_options"]}
+            schema_dict[vol.Required(CONF_UNIT, 
+                default=user_input.get(CONF_UNIT, defaults["unit"]) if user_input else defaults["unit"])] = vol.In(unit_options)
+        
         # === Секция 2: MQTT топики ===
         schema_dict[vol.Required(CONF_MQTT_TOPIC_MAIN, 
             default=user_input.get(CONF_MQTT_TOPIC_MAIN, defaults["topics"]["main"]) if user_input else defaults["topics"]["main"])] = str
@@ -654,9 +657,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                                    f"📌 Пример: `Counter/Available`\n"
                                    f"🔍 Предпросмотр: `{get_topic_preview(topic_available, name)}`",
             
-            "section3_title": "💰 Тарифы",
-            "day_tariff_desc": f"Дневной тариф (руб/кВт·ч)\nАктуальные тарифы: {TARIFF_INFO_URL}",
-            "night_tariff_desc": f"Ночной тариф (руб/кВт·ч)\nАктуальные тарифы: {TARIFF_INFO_URL}",
+            "section3_title": f"💰 Тарифы [📌 Актуальные тарифы]({TARIFF_INFO_URL})",
+            "day_tariff_desc": "Дневной тариф (руб/кВт·ч)",
+            "night_tariff_desc": "Ночной тариф (руб/кВт·ч)",
             "night_start_desc": "Время начала ночного тарифа\nФормат: ЧЧ:ММ (например, 23:00)",
             "night_end_desc": "Время окончания ночного тарифа\nФормат: ЧЧ:ММ (например, 07:00)",
             
@@ -723,6 +726,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         return {
             "section1_title": "📋 Основные параметры",
             "name_desc": f"Удобное название счетчика {type_name} (например, 'Холодная вода', 'Отопление')",
+            
+            "section1_1_title": "📐 Единицы измерения (только для воды)",
+            "unit_desc": "Выберите единицу измерения для счетчика воды",
             
             "section2_title": "📡 MQTT Топики",
             "topic_main_desc": f"Топик, куда ESP публикует импульсы\n"
@@ -956,7 +962,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         message_lines.append(f"⏰ {time.strftime('%H:%M:%S')}")
         
         message = "\n".join(message_lines)
-        message_title = f"📊 {handler.name}"
+        message_title = "📊 Показания счетчика"
         notification_id = f"pulse_counter_test_{handler.counter_id}_{int(time.time())}"
         
         _LOGGER.info("=" * 60)
@@ -1353,7 +1359,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             
             description = {
                 "name": counter[CONF_NAME],
-                "info": "Измените тарифы на электроэнергию.",
+                "info": f"Измените тарифы на электроэнергию. [📌 Актуальные тарифы]({TARIFF_INFO_URL})",
                 "tariff_info_url": TARIFF_INFO_URL,
             }
         else:
