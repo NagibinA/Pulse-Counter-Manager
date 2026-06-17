@@ -4,7 +4,8 @@
     "abort": {
       "already_configured": "Устройство уже настроено",
       "broker_already_configured": "MQTT брокер уже настроен. Используйте опции для добавления счетчиков.",
-      "no_counters": "Нет добавленных счетчиков"
+      "no_counters": "Нет добавленных счетчиков",
+      "counter_deleted": "Счетчик успешно удален"
     },
     "error": {
       "cannot_connect": "Не удалось подключиться к MQTT брокеру",
@@ -37,6 +38,9 @@
       "pulses_positive": "Количество импульсов должно быть больше 0",
       "invalid_port": "Порт должен быть в диапазоне 1-65535",
       "name_exists": "Счетчик с таким именем уже существует"
+    },
+    "abort": {
+      "counter_deleted": "Счетчик успешно удален"
     },
     "step": {
       "init": {
@@ -76,6 +80,7 @@
           "month_start_value": "Показания на начало месяца",
           "month_start_day": "Показания на начало месяца (день)",
           "month_start_night": "Показания на начало месяца (ночь)",
+          "month_start_day_period": "День начала месяца",
           "export_enabled": "Включить экспорт показаний",
           "export_broker_mode": "Брокер для экспорта",
           "export_broker": "Адрес брокера",
@@ -90,8 +95,10 @@
           "notification_show_day": "Показывать дневные показания",
           "notification_show_night": "Показывать ночные показания",
           "notification_show_total": "Показывать общие показания",
+          "notification_show_month": "Показывать общее потребление за месяц",
+          "notification_show_day_month": "Показывать дневное потребление за месяц",
+          "notification_show_night_month": "Показывать ночное потребление за месяц",
           "notification_show_cost": "Показывать стоимость",
-          "notification_show_month": "Показывать потребление за месяц",
           "notification_custom_message": "Дополнительный текст",
           "notification_show_custom_message": "Показывать дополнительный текст",
           "notification_send_to_ha": "Отправлять в Home Assistant",
@@ -128,6 +135,13 @@
           "month_start_day": "Дневные показания на начало месяца (кВт·ч)",
           "month_start_night": "Ночные показания на начало месяца (кВт·ч)",
           "month_start_value": "Показания на начало месяца"
+        }
+      },
+      "edit_month_start_day": {
+        "title": "День начала месяца",
+        "description": "{info}",
+        "data": {
+          "month_start_day_period": "День начала месяца (1-31)"
         }
       },
       "edit_accumulated": {
@@ -201,7 +215,9 @@
           "notification_show_day": "Дневные показания",
           "notification_show_night": "Ночные показания",
           "notification_show_total": "Общие показания",
-          "notification_show_month": "Потребление за месяц",
+          "notification_show_month": "Общее потребление за месяц",
+          "notification_show_day_month": "Дневное потребление за месяц",
+          "notification_show_night_month": "Ночное потребление за месяц",
           "notification_show_cost": "Стоимость",
           "notification_custom_message": "Дополнительный текст",
           "notification_show_custom_message": "Показывать дополнительный текст",
@@ -245,6 +261,16 @@
         "value": {
           "name": "Значение",
           "description": "Новое значение"
+        }
+      }
+    },
+    "set_month_start_day": {
+      "name": "Установить день начала месяца",
+      "description": "Установить день месяца, с которого начинается отчетный период",
+      "fields": {
+        "day": {
+          "name": "День",
+          "description": "День месяца (1-31)"
         }
       }
     },
