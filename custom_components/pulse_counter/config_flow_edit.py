@@ -52,6 +52,8 @@ from .const import (
     CONF_NOTIFICATION_SHOW_TOTAL,
     CONF_NOTIFICATION_SHOW_COST,
     CONF_NOTIFICATION_SHOW_MONTH,
+    CONF_NOTIFICATION_SHOW_DAY_MONTH,
+    CONF_NOTIFICATION_SHOW_NIGHT_MONTH,
     CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE,
     CONF_NOTIFICATION_CUSTOM_MESSAGE,
     CONF_NOTIFICATION_TARGET_DEVICES,
@@ -63,6 +65,7 @@ from .const import (
     CONF_MONTH_START_VALUE,
     CONF_MONTH_START_DAY,
     CONF_MONTH_START_NIGHT,
+    CONF_MONTH_START_DAY_PERIOD,
     DEFAULT_DAY_TARIFF,
     DEFAULT_NIGHT_TARIFF,
     DEFAULT_NIGHT_START,
@@ -85,12 +88,16 @@ from .const import (
     DEFAULT_NOTIFICATION_SHOW_TOTAL,
     DEFAULT_NOTIFICATION_SHOW_COST,
     DEFAULT_NOTIFICATION_SHOW_MONTH,
+    DEFAULT_NOTIFICATION_SHOW_DAY_MONTH,
+    DEFAULT_NOTIFICATION_SHOW_NIGHT_MONTH,
     DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE,
     DEFAULT_NOTIFICATION_TARGET_DEVICES,
     DEFAULT_NOTIFICATION_SEND_TO_HA,
+    DEFAULT_MONTH_START_DAY_PERIOD,
 )
 from .storage import PulseCounterStorage
 from .config_flow_utils import validate_time_format, get_topic_preview
+from .notification import NotificationSender
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -199,7 +206,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         """Добавление счетчика."""
         errors = {}
         counters = self._entry.data.get(CONF_COUNTERS, {})
-        used_ids = list(counters.keys())
         mobile_devices = await self.async_get_mobile_devices()
 
         if user_input is not None:
@@ -225,11 +231,17 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     if notification_day < 1 or notification_day > 31:
                         errors[CONF_NOTIFICATION_DAY] = "invalid_day"
 
+                month_start_day = user_input.get(CONF_MONTH_START_DAY_PERIOD, DEFAULT_MONTH_START_DAY_PERIOD)
+                if month_start_day < 1 or month_start_day > 31:
+                    errors[CONF_MONTH_START_DAY_PERIOD] = "invalid_day"
+
                 if not errors:
                     counter_name = user_input[CONF_NAME]
                     counter_id = f"counter_{counter_name.lower().replace(' ', '_')}"
 
-                    if counter_id in used_ids:
+                    # Проверяем, что имя не занято (регистронезависимо)
+                    existing_names = [c[CONF_NAME].lower() for c in counters.values()]
+                    if counter_name.lower() in existing_names:
                         errors[CONF_NAME] = "name_exists"
                     else:
                         selected_devices = user_input.get(CONF_NOTIFICATION_TARGET_DEVICES, [])
@@ -238,12 +250,22 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
                         new_counter = self._build_counter_config(user_input, selected_devices)
 
+                        # Удаляем старые данные из хранилища, если они есть
+                        old_storage = PulseCounterStorage(self.hass, counter_id)
+                        await old_storage.async_delete()
+                        _LOGGER.debug("Удалены старые данные хранилища для %s", counter_id)
+
+                        # Создаем НОВЫЙ словарь counters и обновляем entry
                         new_counters = dict(counters)
                         new_counters[counter_id] = new_counter
 
+                        # Обновляем данные entry
+                        new_data = dict(self._entry.data)
+                        new_data[CONF_COUNTERS] = new_counters
+
                         self.hass.config_entries.async_update_entry(
                             self._entry,
-                            data={**self._entry.data, CONF_COUNTERS: new_counters}
+                            data=new_data
                         )
 
                         if DOMAIN not in self.hass.data:
@@ -283,8 +305,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             CONF_METER_TYPE: self._meter_type,
             CONF_UNIT: user_input.get(CONF_UNIT, ""),
             CONF_PULSES_PER_UNIT: user_input.get(CONF_PULSES_PER_UNIT, 0),
-            CONF_INITIAL_VALUE: user_input.get(CONF_INITIAL_VALUE, 0),
-            CONF_MONTH_START_VALUE: user_input.get(CONF_MONTH_START_VALUE, 0),
+            CONF_MONTH_START_DAY_PERIOD: user_input.get(CONF_MONTH_START_DAY_PERIOD, DEFAULT_MONTH_START_DAY_PERIOD),
             CONF_EXPORT_ENABLED: user_input.get(CONF_EXPORT_ENABLED, False),
             CONF_EXPORT_BROKER_MODE: user_input.get(CONF_EXPORT_BROKER_MODE, DEFAULT_EXPORT_BROKER_MODE),
             CONF_EXPORT_BROKER: user_input.get(CONF_EXPORT_BROKER, DEFAULT_EXPORT_BROKER),
@@ -301,8 +322,12 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             CONF_NOTIFICATION_SHOW_TOTAL: user_input.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL),
             CONF_NOTIFICATION_SHOW_COST: user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST),
             CONF_NOTIFICATION_SHOW_MONTH: user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH),
+            CONF_NOTIFICATION_SHOW_DAY_MONTH: user_input.get(CONF_NOTIFICATION_SHOW_DAY_MONTH, DEFAULT_NOTIFICATION_SHOW_DAY_MONTH),
+            CONF_NOTIFICATION_SHOW_NIGHT_MONTH: user_input.get(CONF_NOTIFICATION_SHOW_NIGHT_MONTH, DEFAULT_NOTIFICATION_SHOW_NIGHT_MONTH),
             CONF_NOTIFICATION_CUSTOM_MESSAGE: user_input.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, ""),
             CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE: user_input.get(CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE, DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE),
+            CONF_INITIAL_VALUE: 0,
+            CONF_MONTH_START_VALUE: 0,
         }
 
         if self._meter_type == METER_TYPE_ELECTRICITY:
@@ -327,6 +352,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 CONF_MQTT_TOPIC_MAIN: user_input[CONF_MQTT_TOPIC_MAIN],
                 CONF_MQTT_TOPIC_AVAILABLE: user_input.get(CONF_MQTT_TOPIC_AVAILABLE, ""),
                 CONF_TARIFF: user_input.get(CONF_TARIFF, DEFAULT_TARIFF),
+                CONF_INITIAL_VALUE: user_input.get(CONF_INITIAL_VALUE, 0),
+                CONF_MONTH_START_VALUE: user_input.get(CONF_MONTH_START_VALUE, 0),
                 CONF_EXPORT_TOPIC_DAY: user_input.get(CONF_EXPORT_TOPIC_DAY, DEFAULT_EXPORT_TOPIC_DAY),
                 CONF_EXPORT_TOPIC_NIGHT: user_input.get(CONF_EXPORT_TOPIC_NIGHT, DEFAULT_EXPORT_TOPIC_NIGHT),
             })
@@ -368,6 +395,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             default=user_input.get(CONF_MONTH_START_DAY, 0) if user_input else 0)] = vol.Coerce(float)
         schema_dict[vol.Required(CONF_MONTH_START_NIGHT,
             default=user_input.get(CONF_MONTH_START_NIGHT, 0) if user_input else 0)] = vol.Coerce(float)
+        schema_dict[vol.Required(CONF_MONTH_START_DAY_PERIOD,
+            default=user_input.get(CONF_MONTH_START_DAY_PERIOD, DEFAULT_MONTH_START_DAY_PERIOD) if user_input else DEFAULT_MONTH_START_DAY_PERIOD)] = int
 
         schema_dict[vol.Optional(CONF_EXPORT_ENABLED,
             default=user_input.get(CONF_EXPORT_ENABLED, False) if user_input else False)] = bool
@@ -417,6 +446,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             default=user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST) if user_input else DEFAULT_NOTIFICATION_SHOW_COST)] = bool
         schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_MONTH,
             default=user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH) if user_input else DEFAULT_NOTIFICATION_SHOW_MONTH)] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_DAY_MONTH,
+            default=user_input.get(CONF_NOTIFICATION_SHOW_DAY_MONTH, DEFAULT_NOTIFICATION_SHOW_DAY_MONTH) if user_input else DEFAULT_NOTIFICATION_SHOW_DAY_MONTH)] = bool
+        schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_NIGHT_MONTH,
+            default=user_input.get(CONF_NOTIFICATION_SHOW_NIGHT_MONTH, DEFAULT_NOTIFICATION_SHOW_NIGHT_MONTH) if user_input else DEFAULT_NOTIFICATION_SHOW_NIGHT_MONTH)] = bool
         schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE,
             default=user_input.get(CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE, DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE) if user_input else DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE)] = bool
         schema_dict[vol.Optional(CONF_NOTIFICATION_CUSTOM_MESSAGE,
@@ -451,6 +484,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             default=user_input.get(CONF_INITIAL_VALUE, 0) if user_input else 0)] = vol.Coerce(float)
         schema_dict[vol.Required(CONF_MONTH_START_VALUE,
             default=user_input.get(CONF_MONTH_START_VALUE, 0) if user_input else 0)] = vol.Coerce(float)
+        schema_dict[vol.Required(CONF_MONTH_START_DAY_PERIOD,
+            default=user_input.get(CONF_MONTH_START_DAY_PERIOD, DEFAULT_MONTH_START_DAY_PERIOD) if user_input else DEFAULT_MONTH_START_DAY_PERIOD)] = int
 
         schema_dict[vol.Optional(CONF_EXPORT_ENABLED,
             default=user_input.get(CONF_EXPORT_ENABLED, False) if user_input else False)] = bool
@@ -544,6 +579,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             "initial_night_desc": "Текущие ночные показания счетчика (кВт·ч)\nВведите значение с прибора учета",
             "month_start_day_desc": "Дневные показания на начало месяца (кВт·ч)\nДля расчета потребления за текущий месяц",
             "month_start_night_desc": "Ночные показания на начало месяца (кВт·ч)\nДля расчета потребления за текущий месяц",
+            "month_start_day_period_desc": f"День начала месяца для расчета потребления\n"
+                                          f"📌 По умолчанию: {DEFAULT_MONTH_START_DAY_PERIOD} (1-е число)\n"
+                                          f"Пример: 24 - период с 24 по 23 следующего месяца",
 
             "section6_title": "📤 Экспорт показаний",
             "export_enabled_desc": "Отправлять показания в дополнительные MQTT топики",
@@ -569,7 +607,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             "notification_show_night_desc": "Показывать ночные показания в уведомлении",
             "notification_show_total_desc": "Показывать общие показания в уведомлении",
             "notification_show_cost_desc": "Показывать стоимость в уведомлении",
-            "notification_show_month_desc": "Показывать потребление за месяц",
+            "notification_show_month_desc": "Показывать общее потребление за месяц",
+            "notification_show_day_month_desc": "Показывать дневное потребление за месяц",
+            "notification_show_night_month_desc": "Показывать ночное потребление за месяц",
             "notification_custom_message_desc": "Дополнительный текст в уведомлении\n(например, 'Пора передавать показания')",
             "notification_show_custom_message_desc": "Показывать дополнительный текст в уведомлении",
 
@@ -620,6 +660,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             "section5_title": "📊 Начальные показания",
             "initial_value_desc": f"Текущие показания счетчика ({unit})\nВведите значение с прибора учета",
             "month_start_value_desc": f"Показания на начало месяца ({unit})\nДля расчета потребления за текущий месяц",
+            "month_start_day_period_desc": f"День начала месяца для расчета потребления\n"
+                                          f"📌 По умолчанию: {DEFAULT_MONTH_START_DAY_PERIOD} (1-е число)\n"
+                                          f"Пример: 24 - период с 24 по 23 следующего месяца",
 
             "section6_title": "📤 Экспорт показаний",
             "export_enabled_desc": "Отправлять показания в дополнительные MQTT топики",
@@ -676,6 +719,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         actions = {
             "edit_current": "📊 Изменить текущие показания",
             "edit_month_start": "📅 Изменить показания на начало месяца",
+            "edit_month_start_day": "📅 Изменить день начала месяца",
             "edit_accumulated": "⚡ Изменить накопленные импульсы",
             "edit_tariffs": "💰 Изменить тарифы",
             "edit_pulses": "⚙️ Изменить коэффициент импульсов",
@@ -692,6 +736,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 return await self.async_step_edit_current()
             elif action == "edit_month_start":
                 return await self.async_step_edit_month_start()
+            elif action == "edit_month_start_day":
+                return await self.async_step_edit_month_start_day()
             elif action == "edit_accumulated":
                 return await self.async_step_edit_accumulated()
             elif action == "edit_tariffs":
@@ -717,6 +763,57 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             description_placeholders={
                 "name": counter[CONF_NAME],
                 "info": f"Выберите действие для счетчика **{counter[CONF_NAME]}**",
+            }
+        )
+
+    async def async_step_edit_month_start_day(self, user_input=None):
+        """Изменение дня начала месяца."""
+        counter = self._entry.data[CONF_COUNTERS][self._selected_counter_id]
+        handler = self._get_handler_by_counter_id()
+
+        if user_input is not None:
+            day = user_input.get(CONF_MONTH_START_DAY_PERIOD)
+            if day < 1 or day > 31:
+                return self.async_show_form(
+                    step_id="edit_month_start_day",
+                    data_schema=vol.Schema({
+                        vol.Required(CONF_MONTH_START_DAY_PERIOD, default=day, description="День начала месяца (1-31)"): int,
+                    }),
+                    errors={CONF_MONTH_START_DAY_PERIOD: "invalid_day"},
+                    description_placeholders={
+                        "name": counter[CONF_NAME],
+                        "info": "Введите день месяца, с которого начинается отчетный период.",
+                    }
+                )
+
+            if handler:
+                await handler.async_set_month_start_day(day)
+
+            new_counter = dict(counter)
+            new_counter[CONF_MONTH_START_DAY_PERIOD] = day
+            counters = dict(self._entry.data[CONF_COUNTERS])
+            counters[self._selected_counter_id] = new_counter
+            self.hass.config_entries.async_update_entry(
+                self._entry,
+                data={**self._entry.data, CONF_COUNTERS: counters}
+            )
+
+            _LOGGER.info("Установлен день начала месяца для %s: %d", counter[CONF_NAME], day)
+
+            return self.async_create_entry(title="", data={})
+
+        current_day = handler.month_start_day if handler else DEFAULT_MONTH_START_DAY_PERIOD
+
+        return self.async_show_form(
+            step_id="edit_month_start_day",
+            data_schema=vol.Schema({
+                vol.Required(CONF_MONTH_START_DAY_PERIOD, default=current_day, description="День начала месяца (1-31)"): int,
+            }),
+            description_placeholders={
+                "name": counter[CONF_NAME],
+                "info": f"Введите день месяца, с которого начинается отчетный период.\n"
+                       f"Текущее значение: **{current_day}** число.\n\n"
+                       f"📌 Пример: если указать 24, то период будет с 24 числа по 23 следующего месяца.",
             }
         )
 
@@ -760,8 +857,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
         if user_input is not None:
             if user_input.get("confirm", False):
+                # 1. Удаляем устройство и сущности из HA
                 await self._remove_device_and_entities(self._selected_counter_id)
 
+                # 2. Удаляем счетчик из конфигурации
                 counters = dict(self._entry.data[CONF_COUNTERS])
                 counters.pop(self._selected_counter_id, None)
 
@@ -770,15 +869,15 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     data={**self._entry.data, CONF_COUNTERS: counters}
                 )
 
+                # 3. Останавливаем и удаляем обработчик (он сам удалит storage)
                 handler_manager = self.hass.data[DOMAIN].get("handler_manager")
                 if handler_manager:
                     await handler_manager.remove_handler(self._selected_counter_id)
 
                 _LOGGER.info("Счетчик %s удален", counter[CONF_NAME])
 
-                await self.hass.config_entries.async_reload(self._entry.entry_id)
-
-                return self.async_create_entry(title="", data={})
+                # 4. Возвращаемся в главное меню
+                return self.async_abort(reason="counter_deleted")
             else:
                 return await self.async_step_edit_choice()
 
@@ -809,94 +908,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             return None
         return handler_manager.get_handler(self._selected_counter_id)
 
-    async def _send_test_notification(self, handler):
-        """Отправить тестовое уведомление."""
-        message_lines = []
-
-        message_lines.append("🧪 **ТЕСТОВОЕ УВЕДОМЛЕНИЕ**")
-        message_lines.append("")
-        message_lines.append(f"🏠 **{handler.name}**")
-        message_lines.append("")
-
-        if handler.meter_type == METER_TYPE_ELECTRICITY:
-            if handler.notification_show_day:
-                message_lines.append(f"☀️ День: **{handler.day_kwh:.1f}** kWh")
-            if handler.notification_show_night:
-                message_lines.append(f"🌙 Ночь: **{handler.night_kwh:.1f}** kWh")
-            if handler.notification_show_total:
-                message_lines.append(f"📈 Всего: **{handler.total_value:.1f}** kWh")
-            if handler.notification_show_month:
-                message_lines.append(f"📅 За месяц: **{handler.month_value:.1f}** kWh")
-            if handler.notification_show_cost:
-                message_lines.append(f"💰 Стоимость за месяц: **{handler.month_total_cost:.2f}** руб")
-        else:
-            if handler.notification_show_total:
-                message_lines.append(f"📈 Всего: **{handler.total_value:.1f}** {handler.unit}")
-            if handler.notification_show_month:
-                message_lines.append(f"📅 За месяц: **{handler.month_value:.1f}** {handler.unit}")
-            if handler.notification_show_cost:
-                message_lines.append(f"💰 Стоимость за месяц: **{handler.month_cost:.2f}** руб")
-
-        if handler.notification_show_custom_message and handler.notification_custom_message:
-            message_lines.append("")
-            message_lines.append(f"💬 {handler.notification_custom_message}")
-
-        message_lines.append("")
-        message_lines.append(f"⏰ {time.strftime('%H:%M:%S')}")
-
-        message = "\n".join(message_lines)
-        message_title = "📊 Показания счетчика"
-        notification_id = f"pulse_counter_test_{handler.counter_id}_{int(time.time())}"
-
-        _LOGGER.info("=" * 60)
-        _LOGGER.info("Отправка ТЕСТОВОГО уведомления для счетчика: %s", handler.name)
-        _LOGGER.info("Отправлять в Home Assistant: %s", handler.notification_send_to_ha)
-        _LOGGER.info("Выбранные устройства: %s", handler.notification_target_devices)
-
-        success_count = 0
-
-        if handler.notification_send_to_ha:
-            _LOGGER.info("→ Отправка в Home Assistant")
-            persistent_notification.async_create(
-                self.hass,
-                message,
-                title=message_title,
-                notification_id=notification_id
-            )
-            _LOGGER.info("✓ Отправлено в Home Assistant")
-            success_count += 1
-
-        all_services = self.hass.services.async_services()
-        notify_services = all_services.get("notify", [])
-
-        for device_service in handler.notification_target_devices:
-            if not device_service.startswith("notify."):
-                device_service = f"notify.{device_service}"
-
-            service_name = device_service.replace("notify.", "")
-            if service_name in notify_services:
-                _LOGGER.info("→ Отправка на устройство: %s", device_service)
-                try:
-                    await self.hass.services.async_call(
-                        "notify",
-                        service_name,
-                        {
-                            "title": message_title,
-                            "message": message,
-                            "data": {"ttl": 0, "priority": "high"}
-                        },
-                        blocking=False
-                    )
-                    _LOGGER.info("✓ Отправлено на %s", device_service)
-                    success_count += 1
-                except Exception as e:
-                    _LOGGER.error("❌ Ошибка отправки на %s: %s", device_service, e)
-            else:
-                _LOGGER.warning("Сервис не найден: %s", device_service)
-
-        _LOGGER.info("✅ Тестовое уведомление отправлено в %d мест", success_count)
-        _LOGGER.info("=" * 60)
-
     def _build_notification_schema(self, counter, meter_type, mobile_devices, user_input):
         """Построение схемы уведомлений."""
         schema_dict = {}
@@ -910,6 +921,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             show_night_default = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT)
             show_total_default = user_input.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL)
             show_month_default = user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH)
+            show_day_month_default = user_input.get(CONF_NOTIFICATION_SHOW_DAY_MONTH, DEFAULT_NOTIFICATION_SHOW_DAY_MONTH)
+            show_night_month_default = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT_MONTH, DEFAULT_NOTIFICATION_SHOW_NIGHT_MONTH)
             show_cost_default = user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST)
             show_custom_message_default = user_input.get(CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE, DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE)
             custom_message_default = user_input.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "")
@@ -928,6 +941,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             show_night_default = counter.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT)
             show_total_default = counter.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL)
             show_month_default = counter.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH)
+            show_day_month_default = counter.get(CONF_NOTIFICATION_SHOW_DAY_MONTH, DEFAULT_NOTIFICATION_SHOW_DAY_MONTH)
+            show_night_month_default = counter.get(CONF_NOTIFICATION_SHOW_NIGHT_MONTH, DEFAULT_NOTIFICATION_SHOW_NIGHT_MONTH)
             show_cost_default = counter.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST)
             show_custom_message_default = counter.get(CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE, DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE)
             custom_message_default = counter.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "")
@@ -950,6 +965,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         if meter_type == METER_TYPE_ELECTRICITY:
             schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_DAY, default=show_day_default)] = bool
             schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_NIGHT, default=show_night_default)] = bool
+            schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_DAY_MONTH, default=show_day_month_default)] = bool
+            schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_NIGHT_MONTH, default=show_night_month_default)] = bool
 
         schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_TOTAL, default=show_total_default)] = bool
         schema_dict[vol.Optional(CONF_NOTIFICATION_SHOW_MONTH, default=show_month_default)] = bool
@@ -981,20 +998,25 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         mobile_devices = await self.async_get_mobile_devices()
 
         if user_input is not None and user_input.get("test_notification", False):
+            # Сохраняем настройки временно для теста
             handler = self._get_handler_by_counter_id()
             if handler:
+                # Сохраняем старые настройки
                 old_send_to_ha = handler.notification_send_to_ha
                 old_target_devices = handler.notification_target_devices
                 old_show_day = handler.notification_show_day
                 old_show_night = handler.notification_show_night
                 old_show_total = handler.notification_show_total
                 old_show_month = handler.notification_show_month
+                old_show_day_month = handler.notification_show_day_month
+                old_show_night_month = handler.notification_show_night_month
                 old_show_cost = handler.notification_show_cost
                 old_show_custom_message = handler.notification_show_custom_message
                 old_custom_message = handler.notification_custom_message
 
+                # Временно применяем новые настройки для теста
                 handler.notification_send_to_ha = user_input.get(CONF_NOTIFICATION_SEND_TO_HA, DEFAULT_NOTIFICATION_SEND_TO_HA)
-
+                
                 selected_devices_raw = user_input.get(CONF_NOTIFICATION_TARGET_DEVICES, [])
                 if isinstance(selected_devices_raw, list):
                     selected_devices = selected_devices_raw
@@ -1006,18 +1028,25 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 handler.notification_show_night = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT)
                 handler.notification_show_total = user_input.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL)
                 handler.notification_show_month = user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH)
+                handler.notification_show_day_month = user_input.get(CONF_NOTIFICATION_SHOW_DAY_MONTH, DEFAULT_NOTIFICATION_SHOW_DAY_MONTH)
+                handler.notification_show_night_month = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT_MONTH, DEFAULT_NOTIFICATION_SHOW_NIGHT_MONTH)
                 handler.notification_show_cost = user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST)
                 handler.notification_show_custom_message = user_input.get(CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE, DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE)
                 handler.notification_custom_message = user_input.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "")
 
-                await self._send_test_notification(handler)
+                # Отправляем тестовое уведомление через NotificationSender
+                sender = NotificationSender(self.hass)
+                await sender.send_notification(handler, is_test=True)
 
+                # Восстанавливаем старые настройки
                 handler.notification_send_to_ha = old_send_to_ha
                 handler.notification_target_devices = old_target_devices
                 handler.notification_show_day = old_show_day
                 handler.notification_show_night = old_show_night
                 handler.notification_show_total = old_show_total
                 handler.notification_show_month = old_show_month
+                handler.notification_show_day_month = old_show_day_month
+                handler.notification_show_night_month = old_show_night_month
                 handler.notification_show_cost = old_show_cost
                 handler.notification_show_custom_message = old_show_custom_message
                 handler.notification_custom_message = old_custom_message
@@ -1040,6 +1069,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             new_counter[CONF_NOTIFICATION_SHOW_NIGHT] = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT)
             new_counter[CONF_NOTIFICATION_SHOW_TOTAL] = user_input.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL)
             new_counter[CONF_NOTIFICATION_SHOW_MONTH] = user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH)
+            new_counter[CONF_NOTIFICATION_SHOW_DAY_MONTH] = user_input.get(CONF_NOTIFICATION_SHOW_DAY_MONTH, DEFAULT_NOTIFICATION_SHOW_DAY_MONTH)
+            new_counter[CONF_NOTIFICATION_SHOW_NIGHT_MONTH] = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT_MONTH, DEFAULT_NOTIFICATION_SHOW_NIGHT_MONTH)
             new_counter[CONF_NOTIFICATION_SHOW_COST] = user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST)
             new_counter[CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE] = user_input.get(CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE, DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE)
             new_counter[CONF_NOTIFICATION_CUSTOM_MESSAGE] = user_input.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "")
@@ -1068,16 +1099,13 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 handler.notification_show_night = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT, DEFAULT_NOTIFICATION_SHOW_NIGHT)
                 handler.notification_show_total = user_input.get(CONF_NOTIFICATION_SHOW_TOTAL, DEFAULT_NOTIFICATION_SHOW_TOTAL)
                 handler.notification_show_month = user_input.get(CONF_NOTIFICATION_SHOW_MONTH, DEFAULT_NOTIFICATION_SHOW_MONTH)
+                handler.notification_show_day_month = user_input.get(CONF_NOTIFICATION_SHOW_DAY_MONTH, DEFAULT_NOTIFICATION_SHOW_DAY_MONTH)
+                handler.notification_show_night_month = user_input.get(CONF_NOTIFICATION_SHOW_NIGHT_MONTH, DEFAULT_NOTIFICATION_SHOW_NIGHT_MONTH)
                 handler.notification_show_cost = user_input.get(CONF_NOTIFICATION_SHOW_COST, DEFAULT_NOTIFICATION_SHOW_COST)
                 handler.notification_show_custom_message = user_input.get(CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE, DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE)
                 handler.notification_custom_message = user_input.get(CONF_NOTIFICATION_CUSTOM_MESSAGE, "")
                 handler.notification_send_to_ha = user_input.get(CONF_NOTIFICATION_SEND_TO_HA, DEFAULT_NOTIFICATION_SEND_TO_HA)
                 handler.notification_target_devices = selected_devices
-
-                if DOMAIN in self.hass.data:
-                    handler_manager = self.hass.data[DOMAIN].get("handler_manager")
-                    if handler_manager:
-                        handler_manager.notified_this_month[self._selected_counter_id] = False
 
                 _LOGGER.info("Обновлены настройки уведомлений для %s", counter[CONF_NAME])
 
@@ -1111,12 +1139,18 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                                 counter[CONF_NAME], user_input["total_value"])
             return self.async_create_entry(title="", data={})
 
-        storage = PulseCounterStorage(self.hass, counter["id"])
+        storage = PulseCounterStorage(self.hass, counter[CONF_COUNTER_ID])
         data = await storage.async_load()
 
         if meter_type == METER_TYPE_ELECTRICITY:
             current_day = data.get("day_total_kwh", 0) if data else 0
             current_night = data.get("night_total_kwh", 0) if data else 0
+
+            if current_day == 0 and current_night == 0:
+                handler = self._get_handler_by_counter_id()
+                if handler:
+                    current_day = handler.day_kwh
+                    current_night = handler.night_kwh
 
             schema = vol.Schema({
                 vol.Required("day_kwh", default=current_day, description="Дневные показания (кВт·ч)"): vol.Coerce(float),
@@ -1129,6 +1163,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             }
         else:
             current_val = data.get("total_value", 0) if data else 0
+
+            if current_val == 0:
+                handler = self._get_handler_by_counter_id()
+                if handler:
+                    current_val = handler.total_value
 
             schema = vol.Schema({
                 vol.Required("total_value", default=current_val, description=f"Показания ({counter['unit']})"): vol.Coerce(float),
@@ -1154,22 +1193,37 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             handler = self._get_handler_by_counter_id()
             if handler:
                 if meter_type == METER_TYPE_ELECTRICITY:
-                    await handler.async_set_month_start_day(user_input["month_start_day"])
-                    await handler.async_set_month_start_night(user_input["month_start_night"])
+                    day_value = user_input.get("month_start_day", 0)
+                    night_value = user_input.get("month_start_night", 0)
+                    if day_value < 0:
+                        day_value = 0
+                    if night_value < 0:
+                        night_value = 0
+                    await handler.async_set_month_start_day_kwh(day_value)
+                    await handler.async_set_month_start_night(night_value)
                     _LOGGER.info("Изменено начало месяца для %s: день=%.1f, ночь=%.1f",
-                                counter[CONF_NAME], user_input["month_start_day"], user_input["month_start_night"])
+                                counter[CONF_NAME], day_value, night_value)
                 else:
-                    await handler.async_set_month_start_value(user_input["month_start_value"])
+                    value = user_input.get("month_start_value", 0)
+                    if value < 0:
+                        value = 0
+                    await handler.async_set_month_start_value(value)
                     _LOGGER.info("Изменено начало месяца для %s: %.1f",
-                                counter[CONF_NAME], user_input["month_start_value"])
+                                counter[CONF_NAME], value)
             return self.async_create_entry(title="", data={})
 
-        storage = PulseCounterStorage(self.hass, counter["id"])
+        storage = PulseCounterStorage(self.hass, counter[CONF_COUNTER_ID])
         data = await storage.async_load()
 
         if meter_type == METER_TYPE_ELECTRICITY:
             current_day = data.get("month_start_day", 0) if data else 0
             current_night = data.get("month_start_night", 0) if data else 0
+
+            if current_day == 0 and current_night == 0:
+                handler = self._get_handler_by_counter_id()
+                if handler:
+                    current_day = handler.day_kwh
+                    current_night = handler.night_kwh
 
             schema = vol.Schema({
                 vol.Required("month_start_day", default=current_day, description="Дневные показания на начало месяца (кВт·ч)"): vol.Coerce(float),
@@ -1182,6 +1236,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             }
         else:
             current_val = data.get("month_start_value", 0) if data else 0
+
+            if current_val == 0:
+                handler = self._get_handler_by_counter_id()
+                if handler:
+                    current_val = handler.total_value
 
             schema = vol.Schema({
                 vol.Required("month_start_value", default=current_val, description=f"Показания на начало месяца ({counter['unit']})"): vol.Coerce(float),
@@ -1217,7 +1276,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                                 counter[CONF_NAME], user_input["impulses"])
             return self.async_create_entry(title="", data={})
 
-        storage = PulseCounterStorage(self.hass, counter["id"])
+        storage = PulseCounterStorage(self.hass, counter[CONF_COUNTER_ID])
         data = await storage.async_load()
 
         if meter_type == METER_TYPE_ELECTRICITY:

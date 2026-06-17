@@ -1,7 +1,7 @@
 """Константы для интеграции Pulse Counter Manager."""
 
 DOMAIN = "pulse_counter"
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 
 # Ссылка на официальные тарифы
 TARIFF_INFO_URL = "https://www.elec.ru/library/rd/tarify-elektroenergiya-2026/st-peterburg.html"
@@ -123,6 +123,7 @@ CONF_INITIAL_NIGHT_KWH = "initial_night_kwh"
 CONF_MONTH_START_VALUE = "month_start_value"
 CONF_MONTH_START_DAY = "month_start_day"
 CONF_MONTH_START_NIGHT = "month_start_night"
+CONF_MONTH_START_DAY_PERIOD = "month_start_day_period"
 
 # Константы для уведомлений
 CONF_NOTIFICATION_ENABLED = "notification_enabled"
@@ -133,6 +134,8 @@ CONF_NOTIFICATION_SHOW_NIGHT = "notification_show_night"
 CONF_NOTIFICATION_SHOW_TOTAL = "notification_show_total"
 CONF_NOTIFICATION_SHOW_COST = "notification_show_cost"
 CONF_NOTIFICATION_SHOW_MONTH = "notification_show_month"
+CONF_NOTIFICATION_SHOW_DAY_MONTH = "notification_show_day_month"
+CONF_NOTIFICATION_SHOW_NIGHT_MONTH = "notification_show_night_month"
 CONF_NOTIFICATION_CUSTOM_MESSAGE = "notification_custom_message"
 CONF_NOTIFICATION_SHOW_CUSTOM_MESSAGE = "notification_show_custom_message"
 CONF_NOTIFICATION_TARGET_DEVICES = "notification_target_devices"
@@ -146,6 +149,8 @@ DEFAULT_NOTIFICATION_SHOW_NIGHT = True
 DEFAULT_NOTIFICATION_SHOW_TOTAL = True
 DEFAULT_NOTIFICATION_SHOW_COST = True
 DEFAULT_NOTIFICATION_SHOW_MONTH = True
+DEFAULT_NOTIFICATION_SHOW_DAY_MONTH = True
+DEFAULT_NOTIFICATION_SHOW_NIGHT_MONTH = True
 DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE = True
 DEFAULT_NOTIFICATION_TARGET_DEVICES = []
 DEFAULT_NOTIFICATION_SEND_TO_HA = True
@@ -167,6 +172,7 @@ DEFAULT_EXPORT_TOPIC_NIGHT = "export/night"
 DEFAULT_EXPORT_BROKER = ""
 DEFAULT_EXPORT_PORT = 1883
 DEFAULT_EXPORT_BROKER_MODE = EXPORT_BROKER_MAIN
+DEFAULT_MONTH_START_DAY_PERIOD = 1
 
 # События и состояния
 EVENT_IMPULSE_RECEIVED = f"{DOMAIN}_impulse_received"
