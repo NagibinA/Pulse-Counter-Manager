@@ -2,7 +2,7 @@
 
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-18BCF2?logo=home-assistant&logoColor=white)](https://www.home-assistant.io/)
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/hacs/integration)
-[![version](https://img.shields.io/badge/version-1.5.2-blue.svg)](https://github.com/NagibinA/Pulse-Counter-Manager)
+[![version](https://img.shields.io/badge/version-1.6.0-blue.svg)](https://github.com/NagibinA/Pulse-Counter-Manager)
 [![Arduino](https://img.shields.io/badge/Arduino-00878F?logo=arduino&logoColor=white)](https://www.arduino.cc/)
 [![ESPHome](https://img.shields.io/badge/ESPHome-000000?logo=esphome&logoColor=white)](https://esphome.io/)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -16,7 +16,6 @@
 ## 📌 Оглавление
 
 - [Возможности](#-возможности)
-- [Что нового в версии 1.5.2](#-что-нового-в-версии-152)
 - [Установка](#-установка)
 - [Настройка ESP](#-настройка-esp)
 - [Настройка в Home Assistant](#-настройка-в-home-assistant)
@@ -47,29 +46,6 @@
 - 🔗 **Ссылка на актуальные тарифы** — в настройках интеграции
 - 📬 **Ежемесячные уведомления** — автоматическая отправка показаний в заданный день месяца
 
----
-
-## 🎯 Что нового в версии 1.5.2
-
-### Добавлено
-
-- 📬 **Ежемесячные уведомления** — автоматическая отправка показаний счетчика в выбранный день месяца (по умолчанию 24 число)
-- ⏰ **Настраиваемое время отправки** — можно указать любое время (по умолчанию 19:00)
-- 📱 **Выбор сервиса уведомлений** — отправка в Home Assistant, на телефон, в Telegram и другие
-- 🎛️ **Гибкие настройки содержимого** — можно выбрать, какие показания включать в уведомление:
-  - Дневные показания
-  - Ночные показания
-  - Общие показания
-  - Потребление за месяц
-  - Стоимость
-- 💬 **Дополнительный текст** — возможность добавить свой комментарий к уведомлению
-- 🔔 **Сервис тестового уведомления** — для проверки настроек
-
-### Улучшено
-
-- Новая секция **"📬 Ежемесячные уведомления"** в настройках счетчика
-- Улучшенные подсказки для всех полей уведомлений
-- Оптимизированная проверка времени отправки
 
 ---
 
