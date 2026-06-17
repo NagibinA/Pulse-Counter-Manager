@@ -24,6 +24,11 @@ class PulseCounterUtilityMQTTHandler(BaseMQTTHandler):
 
         _LOGGER.info("Топик для %s: %s", self.name, self.topic_main)
 
+    async def async_delete_state(self) -> None:
+        """Удалить состояние из хранилища."""
+        await super().async_delete_state()
+        _LOGGER.info("Удалено состояние для счетчика %s", self.name)
+
     def _subscribe_topics(self):
         if self.topic_main:
             self._client.subscribe(self.topic_main)

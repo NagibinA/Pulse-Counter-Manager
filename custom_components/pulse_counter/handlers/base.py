@@ -29,7 +29,21 @@ from ..const import (
     CONF_EXPORT_TOPIC_NIGHT,
     CONF_INITIAL_VALUE,
     CONF_MONTH_START_VALUE,
+    CONF_MONTH_START_DAY_PERIOD,
     DEFAULT_EXPORT_PORT,
+    DEFAULT_MONTH_START_DAY_PERIOD,
+    DEFAULT_NOTIFICATION_DAY,
+    DEFAULT_NOTIFICATION_TIME,
+    DEFAULT_NOTIFICATION_SHOW_DAY,
+    DEFAULT_NOTIFICATION_SHOW_NIGHT,
+    DEFAULT_NOTIFICATION_SHOW_TOTAL,
+    DEFAULT_NOTIFICATION_SHOW_MONTH,
+    DEFAULT_NOTIFICATION_SHOW_DAY_MONTH,
+    DEFAULT_NOTIFICATION_SHOW_NIGHT_MONTH,
+    DEFAULT_NOTIFICATION_SHOW_COST,
+    DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE,
+    DEFAULT_NOTIFICATION_TARGET_DEVICES,
+    DEFAULT_NOTIFICATION_SEND_TO_HA,
 )
 from ..storage import PulseCounterStorage
 
@@ -47,6 +61,7 @@ class BaseMQTTHandler:
         self.meter_type = config.get(CONF_METER_TYPE, METER_TYPE_ELECTRICITY)
         self.unit = config.get(CONF_UNIT, "ед")
         self.pulses_per_unit = config.get(CONF_PULSES_PER_UNIT, 1000)
+        self.month_start_day = config.get(CONF_MONTH_START_DAY_PERIOD, DEFAULT_MONTH_START_DAY_PERIOD)
 
         self.broker = broker
         self.port = port
@@ -63,6 +78,22 @@ class BaseMQTTHandler:
         self.export_password = config.get(CONF_EXPORT_PASSWORD, "")
         self.export_topic_day = config.get(CONF_EXPORT_TOPIC_DAY, "export/day")
         self.export_topic_night = config.get(CONF_EXPORT_TOPIC_NIGHT, "export/night")
+
+        # Поля для уведомлений
+        self.notification_enabled = config.get("notification_enabled", False)
+        self.notification_day = config.get("notification_day", DEFAULT_NOTIFICATION_DAY)
+        self.notification_time = config.get("notification_time", DEFAULT_NOTIFICATION_TIME)
+        self.notification_show_day = config.get("notification_show_day", DEFAULT_NOTIFICATION_SHOW_DAY)
+        self.notification_show_night = config.get("notification_show_night", DEFAULT_NOTIFICATION_SHOW_NIGHT)
+        self.notification_show_total = config.get("notification_show_total", DEFAULT_NOTIFICATION_SHOW_TOTAL)
+        self.notification_show_month = config.get("notification_show_month", DEFAULT_NOTIFICATION_SHOW_MONTH)
+        self.notification_show_day_month = config.get("notification_show_day_month", DEFAULT_NOTIFICATION_SHOW_DAY_MONTH)
+        self.notification_show_night_month = config.get("notification_show_night_month", DEFAULT_NOTIFICATION_SHOW_NIGHT_MONTH)
+        self.notification_show_cost = config.get("notification_show_cost", DEFAULT_NOTIFICATION_SHOW_COST)
+        self.notification_show_custom_message = config.get("notification_show_custom_message", DEFAULT_NOTIFICATION_SHOW_CUSTOM_MESSAGE)
+        self.notification_custom_message = config.get("notification_custom_message", "")
+        self.notification_target_devices = config.get("notification_target_devices", DEFAULT_NOTIFICATION_TARGET_DEVICES)
+        self.notification_send_to_ha = config.get("notification_send_to_ha", DEFAULT_NOTIFICATION_SEND_TO_HA)
 
         self._partial = 0
         self._total_value = config.get(CONF_INITIAL_VALUE, 0)
@@ -102,6 +133,7 @@ class BaseMQTTHandler:
             self._partial = data.get("partial", 0)
             self._total_value = data.get("total_value", self._total_value)
             self._month_start_value = data.get("month_start_value", self._month_start_value)
+            self.month_start_day = data.get("month_start_day", self.month_start_day)
             self._last_reset_date = data.get("last_reset_date")
             if self._last_reset_date and isinstance(self._last_reset_date, str):
                 self._last_reset_date = datetime.fromisoformat(self._last_reset_date).date()
@@ -110,8 +142,8 @@ class BaseMQTTHandler:
             if self._last_month_date and isinstance(self._last_month_date, str):
                 self._last_month_date = datetime.fromisoformat(self._last_month_date).date()
             self._last_impulses_per_minute = data.get("last_impulses_per_minute", 0)
-            _LOGGER.debug("Загружено состояние для %s: total=%.1f, partial=%d",
-                         self.name, self._total_value, self._partial)
+            _LOGGER.debug("Загружено состояние для %s: total=%.1f, partial=%d, month_start_day=%d",
+                         self.name, self._total_value, self._partial, self.month_start_day)
         else:
             _LOGGER.debug("Нет сохраненного состояния для %s", self.name)
 
@@ -123,6 +155,7 @@ class BaseMQTTHandler:
             "partial": self._partial,
             "total_value": self._total_value,
             "month_start_value": self._month_start_value,
+            "month_start_day": self.month_start_day,
             "last_reset_date": self._last_reset_date.isoformat() if self._last_reset_date else None,
             "last_month_value": self._last_month_value,
             "last_month_date": self._last_month_date.isoformat() if self._last_month_date else None,
@@ -133,8 +166,16 @@ class BaseMQTTHandler:
         _LOGGER.debug("Сохранено состояние для %s", self.name)
 
     async def async_delete_state(self) -> None:
-        """Удалить состояние из хранилища."""
+        """Удалить состояние из хранилища и сбросить все значения."""
         await self.storage.async_delete()
+        self._partial = 0
+        self._total_value = 0
+        self._month_start_value = 0
+        self.month_start_day = DEFAULT_MONTH_START_DAY_PERIOD
+        self._last_impulses_per_minute = 0
+        self._last_month_value = 0
+        self._last_month_date = None
+        self._last_reset_date = None
         _LOGGER.info("Удалено состояние для счетчика %s", self.name)
 
     async def async_initialize(self):
@@ -287,6 +328,15 @@ class BaseMQTTHandler:
         await self._notify_listeners()
         _LOGGER.info("Установлено начало месяца для %s: %.1f %s", self.name, value, self.unit)
 
+    async def async_set_month_start_day(self, day: int) -> None:
+        """Установить день начала месяца."""
+        if day < 1 or day > 31:
+            raise ValueError("День должен быть в диапазоне 1-31")
+        self.month_start_day = day
+        await self._save_state()
+        await self._notify_listeners()
+        _LOGGER.info("Установлен день начала месяца для %s: %d", self.name, day)
+
     async def async_set_partial(self, value: int):
         self._partial = value
         await self._save_state()
@@ -299,6 +349,20 @@ class BaseMQTTHandler:
 
     @property
     def month_value(self) -> float:
+        """Потребление с дня начала месяца."""
+        now = dt_util.now()
+        target_day = self.month_start_day
+
+        if now.day >= target_day:
+            start_date = now.replace(day=target_day, hour=0, minute=0, second=0, microsecond=0)
+        else:
+            if now.month == 1:
+                start_date = now.replace(year=now.year - 1, month=12, day=target_day,
+                                         hour=0, minute=0, second=0, microsecond=0)
+            else:
+                start_date = now.replace(month=now.month - 1, day=target_day,
+                                         hour=0, minute=0, second=0, microsecond=0)
+
         consumption = self._total_value - self._month_start_value
         return round(consumption, 2) if consumption > 0 else 0
 

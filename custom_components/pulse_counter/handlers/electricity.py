@@ -73,6 +73,7 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
             self._night_total_kwh = data.get("night_total_kwh", self._night_total_kwh)
             self._month_start_day = data.get("month_start_day", self._month_start_day)
             self._month_start_night = data.get("month_start_night", self._month_start_night)
+            self.month_start_day = data.get("month_start_day_period", self.month_start_day)
             self._last_reset_date = data.get("last_reset_date")
             if self._last_reset_date and isinstance(self._last_reset_date, str):
                 self._last_reset_date = datetime.fromisoformat(self._last_reset_date).date()
@@ -83,8 +84,8 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
             if self._last_month_date and isinstance(self._last_month_date, str):
                 self._last_month_date = datetime.fromisoformat(self._last_month_date).date()
             self._last_impulses_per_minute = data.get("last_impulses_per_minute", 0)
-            _LOGGER.debug("Загружено состояние для %s: день=%.1f, ночь=%.1f",
-                         self.name, self._day_total_kwh, self._night_total_kwh)
+            _LOGGER.debug("Загружено состояние для %s: день=%.1f, ночь=%.1f, month_start_day=%d",
+                         self.name, self._day_total_kwh, self._night_total_kwh, self.month_start_day)
         else:
             _LOGGER.debug("Нет сохраненного состояния для %s", self.name)
 
@@ -96,6 +97,7 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
             "night_total_kwh": self._night_total_kwh,
             "month_start_day": self._month_start_day,
             "month_start_night": self._month_start_night,
+            "month_start_day_period": self.month_start_day,
             "last_reset_date": self._last_reset_date.isoformat() if self._last_reset_date else None,
             "last_month_day": self._last_month_day,
             "last_month_night": self._last_month_night,
@@ -106,6 +108,21 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
         }
         await self.storage.async_save(data)
         _LOGGER.debug("Сохранено состояние для %s", self.name)
+
+    async def async_delete_state(self) -> None:
+        """Удалить состояние из хранилища и сбросить все значения."""
+        await super().async_delete_state()
+        self._day_partial = 0
+        self._night_partial = 0
+        self._day_total_kwh = 0
+        self._night_total_kwh = 0
+        self._month_start_day = 0
+        self._month_start_night = 0
+        self._last_month_day = 0
+        self._last_month_night = 0
+        self._last_month_total = 0
+        self.current_tariff = STATE_DAY
+        _LOGGER.info("Удалено состояние для счетчика %s", self.name)
 
     def _subscribe_topics(self):
         self._client.subscribe(self.topic_day)
@@ -229,7 +246,7 @@ class PulseCounterMQTTHandler(BaseMQTTHandler):
         await self._notify_listeners()
         _LOGGER.info("Установлены ночные показания для %s: %.1f кВт·ч", self.name, value)
 
-    async def async_set_month_start_day(self, value: float):
+    async def async_set_month_start_day_kwh(self, value: float):
         self._month_start_day = value
         await self._save_state()
         await self._notify_listeners()

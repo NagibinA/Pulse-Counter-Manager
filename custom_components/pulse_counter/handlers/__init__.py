@@ -23,16 +23,11 @@ class HandlerManager:
     def __init__(self, hass: HomeAssistant):
         self.hass = hass
         self._handlers: Dict[str, BaseMQTTHandler] = {}
-        self._notified_this_month: Dict[str, bool] = {}
         self._polling_enabled = False
 
     @property
     def handlers(self) -> Dict[str, BaseMQTTHandler]:
         return self._handlers
-
-    @property
-    def notified_this_month(self) -> Dict[str, bool]:
-        return self._notified_this_month
 
     @property
     def polling_enabled(self) -> bool:
@@ -78,7 +73,6 @@ class HandlerManager:
 
         await handler.async_initialize()
         self._handlers[counter_id] = handler
-        self._notified_this_month[counter_id] = False
 
         _LOGGER.info("Создан обработчик для счетчика %s (ID: %s)", config.get("name"), counter_id)
         return handler
@@ -89,7 +83,6 @@ class HandlerManager:
         if handler:
             await handler.async_delete_state()
             await handler.async_shutdown()
-            self._notified_this_month.pop(counter_id, None)
             _LOGGER.info("Удален обработчик и данные счетчика %s", counter_id)
 
     async def stop_all(self) -> None:
@@ -109,9 +102,7 @@ class HandlerManager:
 
     async def shutdown_all(self) -> None:
         """Завершить все обработчики."""
-        # Создаём копию списка, чтобы избежать изменения во время итерации
         for handler in list(self._handlers.values()):
             await handler.async_shutdown()
         self._handlers.clear()
-        self._notified_this_month.clear()
         _LOGGER.info("Все обработчики завершены")
