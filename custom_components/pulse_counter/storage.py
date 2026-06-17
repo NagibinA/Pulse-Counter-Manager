@@ -30,5 +30,13 @@ class PulseCounterStorage:
             _LOGGER.error(f"Ошибка загрузки: {e}")
         return None
 
+    async def async_delete(self) -> None:
+        """Удалить данные из хранилища."""
+        try:
+            await self._store.async_remove()
+            _LOGGER.debug("Удалены данные хранилища для %s", self.entry_id)
+        except Exception as e:
+            _LOGGER.error(f"Ошибка удаления хранилища: {e}")
+
     async def async_close(self):
         pass
