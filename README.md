@@ -53,6 +53,10 @@
 
 ### Через HACS (рекомендуется)
 
+[![Открыть репозиторий в HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=NagibinA&repository=Pulse-Counter-Manager&category=integration)
+
+Если кнопка не сработала:
+
 1. Откройте HACS → Интеграции
 2. Нажмите на три точки (⋮) → **Custom repositories**
 3. Вставьте URL: `https://github.com/NagibinA/Pulse-Counter-Manager`
